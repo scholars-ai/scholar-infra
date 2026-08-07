@@ -24,3 +24,8 @@ pnpm-debug.log*
 .vscode/
 secrets/*
 !secrets/*.example
+
+# secrets 目录本身要可见，模板可提交，真实 env 排除
+!secrets/
+secrets/*
+!secrets/*.example
