@@ -1,0 +1,37 @@
+# 生产环境（VPS）：core + agents + langfuse。
+#   数据库在 Supabase（含 pgmq/pgvector），不在本 compose 内。
+#   密钥放 ./secrets/*.env（gitignore，只存在于 VPS 部署工作区）。
+#   镜像来自 GHCR，由 deploy.sh 拉取指定版本。
+name: scholars-prod
+
+services:
+  core:
+    image: ghcr.io/scholars-ai/scholar-core:${CORE_VERSION:-latest}
+    restart: unless-stopped
+    env_file:
+      - path: ./secrets/core.env
+        required: true # DATABASE_URL 等
+    ports:
+      - "127.0.0.1:8080:8080" # 仅本机监听，由已有 nginx 反代
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  agents:
+    image: ghcr.io/scholars-ai/scholar-agents:${AGENTS_VERSION:-latest}
+    restart: unless-stopped
+    env_file:
+      - path: ./secrets/agents.env
+        required: true # DATABASE_URL / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / LANGFUSE_*
+    logging: *logging
+
+  # Langfuse 自托管（M1 决定去留：VPS 磁盘紧张则改用云免费版，见 SPEC-001 §7）
+  langfuse:
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    env_file:
+      - path: ./secrets/langfuse.env
+        required: true # DATABASE_URL(独立 schema) / NEXTAUTH_SECRET / SALT / NEXTAUTH_URL
+    ports:
+      - "127.0.0.1:3000:3000"
+    logging: *logging

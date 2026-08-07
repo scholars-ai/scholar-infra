@@ -1,0 +1,49 @@
+# 本地开发环境：一键起全套依赖。
+#   docker compose -f compose.local.yaml up -d
+# 服务本体（core/agents）本地开发时直接跑在宿主机（make run / uv run），
+# 需要容器化联调时用 --profile services。
+name: scholars-local
+
+services:
+  postgres:
+    build: ./postgres
+    environment:
+      POSTGRES_USER: scholar
+      POSTGRES_PASSWORD: scholar # 仅本地开发；生产用 Supabase
+      POSTGRES_DB: scholar
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scholar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  core:
+    profiles: ["services"]
+    build: ../scholar-core
+    environment:
+      DATABASE_URL: postgres://scholar:scholar@postgres:5432/scholar?sslmode=disable
+      CORE_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  agents:
+    profiles: ["services"]
+    build: ../scholar-agents
+    environment:
+      DATABASE_URL: postgres://scholar:scholar@postgres:5432/scholar?sslmode=disable
+    env_file:
+      - path: ./secrets/agents.env # 见 secrets/agents.env.example
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
