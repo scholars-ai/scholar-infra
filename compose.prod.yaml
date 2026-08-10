@@ -1,10 +1,38 @@
-# 生产环境（VPS）：core + agents + langfuse。
-#   数据库在 Supabase（含 pgmq/pgvector），不在本 compose 内。
+# 生产环境（VPS）：postgres + core + agents + langfuse。
+#   数据库自托管于本机（ADR-004）：业务库与 Langfuse 库同实例、不同 database。
 #   密钥放 ./secrets/*.env（gitignore，只存在于 VPS 部署工作区）。
-#   镜像来自 GHCR，由 deploy.sh 拉取指定版本。
+#   服务镜像来自 GHCR，由 deploy.sh 拉取指定版本。
 name: scholars-prod
 
 services:
+  # 自托管 Postgres 17 + pgvector + pgmq（镜像见 ./postgres/Dockerfile，ADR-004）
+  postgres:
+    build: ./postgres
+    image: scholars-postgres:17
+    restart: unless-stopped
+    env_file:
+      - path: ./secrets/postgres.env
+        required: true # POSTGRES_PASSWORD
+    environment:
+      POSTGRES_USER: scholar
+      POSTGRES_DB: scholar
+      # 业务库之外再建 langfuse 库（初始化脚本按需创建）
+      LANGFUSE_DB: langfuse
+    ports:
+      # 仅本机监听。5433 已被 operation-content-platform 占用，本项目用 5434
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scholar -d scholar"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   core:
     image: ghcr.io/scholars-ai/scholar-core:${CORE_VERSION:-latest}
     restart: unless-stopped
@@ -13,25 +41,38 @@ services:
         required: true # DATABASE_URL 等
     ports:
       - "127.0.0.1:8080:8080" # 仅本机监听，由已有 nginx 反代
-    logging: &logging
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
 
   agents:
     image: ghcr.io/scholars-ai/scholar-agents:${AGENTS_VERSION:-latest}
     restart: unless-stopped
     env_file:
       - path: ./secrets/agents.env
-        required: true # DATABASE_URL / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / LANGFUSE_*
+        required: true # DATABASE_URL / OLLAMA_HOST / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / LANGFUSE_*
+    # 访问宿主机的 Ollama（embedding，ADR-005）与 RSSHub（采集）
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
     logging: *logging
 
-  # Langfuse 自托管（M1 决定去留：VPS 磁盘紧张则改用云免费版，见 SPEC-001 §7）
+  # Langfuse 自托管，与业务库共用 postgres 实例的独立 database（ADR-004）
   langfuse:
     image: langfuse/langfuse:2
     restart: unless-stopped
     env_file:
       - path: ./secrets/langfuse.env
-        required: true # DATABASE_URL(独立 schema) / NEXTAUTH_SECRET / SALT / NEXTAUTH_URL
+        required: true # DATABASE_URL(langfuse 库) / NEXTAUTH_SECRET / SALT / NEXTAUTH_URL
     ports:
       - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     logging: *logging
+
+volumes:
+  pgdata:
