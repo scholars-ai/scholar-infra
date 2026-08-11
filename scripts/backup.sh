@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 每日备份（ADR-004 硬性要求）：pg_dump 业务库与 langfuse 库 → gzip → 加密 → 本地保留 N 份
-#   可选：配置了 coscli 则推送腾讯云 COS（离机副本）
+#   配置 COS 时同时推送离机副本，本地副本保留作为快速恢复兜底。
 # 用法：./scripts/backup.sh            由 cron 每日调用
 # 恢复：./scripts/restore.sh <备份文件>
 set -euo pipefail
@@ -9,6 +9,8 @@ cd "$(dirname "$0")/.."
 CONTAINER=scholars-prod-postgres-1
 BACKUP_DIR=${BACKUP_DIR:-/root/scholars-backups}
 RETAIN=${RETAIN:-7}
+LOCAL_RETAIN=${LOCAL_RETAIN:-$RETAIN}
+REMOTE_RETAIN=${REMOTE_RETAIN:-$RETAIN}
 
 # 密钥从 secrets 读取，绝不出现在命令行参数里（避免进程列表泄漏）
 PGPASSWORD=$(grep -oP '(?<=POSTGRES_PASSWORD=).*' secrets/postgres.env)
@@ -41,27 +43,26 @@ for db in scholar langfuse; do
     fi
     echo "backed up $db -> $(basename "$out") ($(stat -c %s "$out")B, verified)"
 
-    # 离机副本（可选）：secrets/backup.env 里配了 COS_BUCKET 才推。
-    # 上传后回读 Content-Length 校验，只写不验的备份等于没备份。
+    # 离机副本：上传并回读校验成功后，本地副本仍保留作为快速恢复兜底。
+    # 上传失败显式告警；本地副本此时已完成并验证。
     if grep -q '^COS_BUCKET=.' secrets/backup.env 2>/dev/null; then
         if uv run --no-project --quiet --with cos-python-sdk-v5 \
             scripts/cos_sync.py put "$out" 2>&1 | sed 's/^/  /'; then
             :
         else
-            # 离机副本失败不该让整个备份任务算失败（本地副本已就绪），但必须显式告警
-            echo "  WARNING: COS upload failed for $(basename "$out")" >&2
+            echo "  WARNING: COS upload failed; local copy retained $(basename "$out")" >&2
         fi
     fi
 done
 
-# 保留最近 N 份（每库各算）：先本地，再远端
+# 保留最近 N 份（每库各算）：本地与远端都有限额，不会持续上涨
 for db in scholar langfuse; do
-    ls -1t "$BACKUP_DIR/${db}-"*.sql.gz.enc 2>/dev/null | tail -n +$((RETAIN + 1)) | while read -r old; do
+    ls -1t "$BACKUP_DIR/${db}-"*.sql.gz.enc 2>/dev/null | tail -n +$((LOCAL_RETAIN + 1)) | while read -r old; do
         rm -f "$old" && echo "pruned local $(basename "$old")"
     done
     if grep -q '^COS_BUCKET=.' secrets/backup.env 2>/dev/null; then
         uv run --no-project --quiet --with cos-python-sdk-v5 \
-            scripts/cos_sync.py prune "db/${db}-" "$RETAIN" 2>/dev/null | sed 's/^/  /' || true
+            scripts/cos_sync.py prune "db/${db}-" "$REMOTE_RETAIN" 2>/dev/null | sed 's/^/  /' || true
     fi
 done
 
