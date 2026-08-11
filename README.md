@@ -47,6 +47,9 @@ cd ../scholar-core && source ../scholar-infra/secrets/local-dsn.sh \
 ```
 
 - 备份 = `pg_dump` → gzip → AES-256 加密；**写完立即解密校验 dump 完整性**，损坏即失败并删除残件
-- 本地保留 7 份于 `/root/scholars-backups`；配置 `coscli` 后自动推 COS 离机副本（当前未配置，仅本地）
+- 本地保留 7 份于 `/root/scholars-backups`
+- **离机副本 M1 暂不做**（个人项目、库内 raw_items 可重新采集、代码在 GitHub）。
+  ⚠️ **到 M3 必须补上**：那时库里有 `metric_snapshots`（发帖表现的历史快照，丢了永久重建不了）
+  和 `insights`（反思经验库）。脚本已内置 `coscli` 推送分支，装好即生效，无需改代码。见 ADR-004
 - 加密口令在 `secrets/backup.env`——**丢失则备份不可解，务必另存密码管理器**
 - 恢复演练已实测（2026-08-10）：扩展、11 枚举、6 个 pgmq 队列、3 个 HNSW 索引、goose 版本全部还原
