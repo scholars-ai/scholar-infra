@@ -68,7 +68,7 @@ services:
       - path: ./secrets/langfuse.env
         required: true # DATABASE_URL(langfuse 库) / NEXTAUTH_SECRET / SALT / NEXTAUTH_URL
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3301:3000"
     depends_on:
       postgres:
         condition: service_healthy

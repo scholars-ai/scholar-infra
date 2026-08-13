@@ -6,7 +6,7 @@ scholars-ai 的部署编排：docker compose、部署脚本、密钥模板。架
 
 ```
 compose.local.yaml    本地开发：Postgres（pgvector+pgmq）一键起；--profile services 联调 core/agents 容器
-compose.prod.yaml     生产（VPS）：core + agents + langfuse；DB 在 Supabase，不在 compose 内
+compose.prod.yaml     生产（VPS）：自托管 Postgres + core + agents + Langfuse
 postgres/Dockerfile   本地开发库镜像（pgvector 官方镜像 + pgmq 扩展）
 deploy.sh             VPS 部署：./deploy.sh <core|agents|all> <version>（拉 GHCR 镜像滚动更新）
 secrets/*.example     密钥模板。真实密钥只存在于 VPS 部署工作区，绝不入库
@@ -35,6 +35,7 @@ cd ../scholar-core && source ../scholar-infra/secrets/local-dsn.sh \
 ```
 
 - 监听 `127.0.0.1:5434`（5433 已被 operation-content-platform 占用）
+- Langfuse 监听 `127.0.0.1:3301`（3000 已被 operation-content-platform 占用）
 - 业务库 `scholar` + Langfuse 库 `langfuse` 同实例；扩展 pgvector 0.8.6 / pgmq 1.12 由 `postgres/initdb/` 首次初始化
 - 数据卷 `scholars-prod_pgdata`（named volume，compose 重建不丢数据）
 
