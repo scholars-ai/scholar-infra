@@ -11,6 +11,7 @@ BACKUP_DIR=${BACKUP_DIR:-/root/scholars-backups}
 RETAIN=${RETAIN:-7}
 LOCAL_RETAIN=${LOCAL_RETAIN:-$RETAIN}
 REMOTE_RETAIN=${REMOTE_RETAIN:-$RETAIN}
+COS_PYTHON=${COS_PYTHON:-python3}
 
 # 密钥从 secrets 读取，绝不出现在命令行参数里（避免进程列表泄漏）
 PGPASSWORD=$(grep -oP '(?<=POSTGRES_PASSWORD=).*' secrets/postgres.env)
@@ -46,8 +47,7 @@ for db in scholar langfuse; do
     # 离机副本：上传并回读校验成功后，本地副本仍保留作为快速恢复兜底。
     # 上传失败显式告警；本地副本此时已完成并验证。
     if grep -q '^COS_BUCKET=.' secrets/backup.env 2>/dev/null; then
-        if uv run --no-project --quiet --with cos-python-sdk-v5 \
-            scripts/cos_sync.py put "$out" 2>&1 | sed 's/^/  /'; then
+        if "$COS_PYTHON" scripts/cos_sync.py put "$out" 2>&1 | sed 's/^/  /'; then
             :
         else
             echo "  WARNING: COS upload failed; local copy retained $(basename "$out")" >&2
@@ -61,8 +61,7 @@ for db in scholar langfuse; do
         rm -f "$old" && echo "pruned local $(basename "$old")"
     done
     if grep -q '^COS_BUCKET=.' secrets/backup.env 2>/dev/null; then
-        uv run --no-project --quiet --with cos-python-sdk-v5 \
-            scripts/cos_sync.py prune "db/${db}-" "$REMOTE_RETAIN" 2>/dev/null | sed 's/^/  /' || true
+        "$COS_PYTHON" scripts/cos_sync.py prune "db/${db}-" "$REMOTE_RETAIN" 2>/dev/null | sed 's/^/  /' || true
     fi
 done
 

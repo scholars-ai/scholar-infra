@@ -6,6 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 FILE=${1:?usage: restore.sh <backup.sql.gz.enc|cos:KEY> [target_db]}
+COS_PYTHON=${COS_PYTHON:-python3}
 
 # 支持直接从 COS 恢复：restore.sh cos:db/scholar-2026....sql.gz.enc
 # 灾难场景下本地副本可能一并丢失，这条路径必须可用（ADR-004）。
@@ -13,8 +14,7 @@ if [[ "$FILE" == cos:* ]]; then
     key="${FILE#cos:}"
     FILE="/tmp/$(basename "$key")"
     echo "downloading $key from COS -> $FILE"
-    uv run --no-project --quiet --with cos-python-sdk-v5 \
-        "$(dirname "$0")/cos_sync.py" get "$key" "$FILE"
+    "$COS_PYTHON" "$(dirname "$0")/cos_sync.py" get "$key" "$FILE"
 fi
 
 [ -f "$FILE" ] || { echo "no such file: $FILE" >&2; exit 1; }

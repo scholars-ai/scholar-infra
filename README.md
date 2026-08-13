@@ -60,7 +60,7 @@ cd ../scholar-core && source ../scholar-infra/secrets/local-dsn.sh \
 ./scripts/restore.sh cos:db/scholar-<时间戳>.sql.gz.enc restore_drill
 ```
 
-`cos_sync.py` 用腾讯云官方 Python SDK 而非 coscli——子账号只授对象级权限，
+`cos_sync.py` 使用腾讯云官方 Python SDK（运行时需安装 `cos-python-sdk-v5`）而非 coscli——子账号只授对象级权限，
 而 coscli 下载前会做桶级 HEAD 探测（需 `cos:HeadBucket`）。详见 ADR-004。
 - 加密口令在 `secrets/backup.env`——**丢失则备份不可解，务必另存密码管理器**
 - 恢复演练已实测（2026-08-10）：扩展、11 枚举、6 个 pgmq 队列、3 个 HNSW 索引、goose 版本全部还原
