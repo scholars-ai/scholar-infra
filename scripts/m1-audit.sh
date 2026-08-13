@@ -16,6 +16,7 @@ langfuse() {
 }
 
 db -At -c "select distinct on (te.topic_id) ar.langfuse_trace_id from topic_evaluations te join agent_runs ar on ar.id = te.agent_run_id where ar.job_type = 'topic.evaluate' and ar.status = 'succeeded' and ar.langfuse_trace_id is not null order by te.topic_id, te.created_at desc" | sort -u >"$TMP_DIR/latest-traces"
+db -At -c "select ar.langfuse_trace_id from agent_runs ar where ar.job_type = 'topic.scout' and ar.status = 'succeeded' and ar.langfuse_trace_id is not null" | sort -u >"$TMP_DIR/scout-traces"
 langfuse -At -c "select distinct trace_id from observations where type = 'GENERATION' and trace_id is not null" | sort -u >"$TMP_DIR/generation-traces"
 langfuse -At -c "select distinct trace_id from scores where name = 'topic_total_score'" | sort -u >"$TMP_DIR/score-traces"
 
@@ -30,8 +31,11 @@ for queue in source_fetch topic_scout topic_evaluate; do
 done
 echo "--- business and Langfuse totals ---"
 db -P pager=off -c "select count(*) as evaluations, count(*) filter (where ar.status = 'succeeded') as succeeded, count(*) filter (where ar.tokens_in is not null and ar.tokens_out is not null) as tokenized from topic_evaluations te join agent_runs ar on ar.id = te.agent_run_id"
+db -P pager=off -c "select count(*) as scout_runs, count(*) filter (where status = 'succeeded') as succeeded, count(*) filter (where tokens_in is not null and tokens_out is not null) as tokenized from agent_runs where job_type = 'topic.scout'"
 langfuse -P pager=off -c "select count(*) filter (where type = 'GENERATION') as generations from observations" -c "select count(*) filter (where name = 'topic_total_score') as topic_scores from scores"
-echo "--- latest evaluation trace parity ---"
+echo "--- LLM trace parity ---"
 printf 'latest_evaluations=%s\n' "$(wc -l <"$TMP_DIR/latest-traces")"
 printf 'missing_generation=%s\n' "$(comm -23 "$TMP_DIR/latest-traces" "$TMP_DIR/generation-traces" | wc -l)"
 printf 'missing_topic_score=%s\n' "$(comm -23 "$TMP_DIR/latest-traces" "$TMP_DIR/score-traces" | wc -l)"
+printf 'scout_runs_with_trace=%s\n' "$(wc -l <"$TMP_DIR/scout-traces")"
+printf 'missing_scout_generation=%s\n' "$(comm -23 "$TMP_DIR/scout-traces" "$TMP_DIR/generation-traces" | wc -l)"
