@@ -45,6 +45,7 @@ cd ../scholar-core && source ../scholar-infra/secrets/local-dsn.sh \
 ./scripts/backup.sh                          # cron 每日 03:47 自动执行
 ./scripts/restore.sh <备份文件> restore_drill  # 恢复演练（勿直接覆盖生产库）
 ./scripts/disk-guard.sh                      # 磁盘水位，cron 每 6h
+./scripts/m1-audit.sh                         # M1 生产审计：产量、重复率、队列、Langfuse 对账
 ```
 
 - 备份 = `pg_dump` → gzip → AES-256 加密；**写完立即解密校验 dump 完整性**，损坏即失败并删除残件
