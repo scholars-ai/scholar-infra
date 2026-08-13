@@ -55,6 +55,8 @@ services:
     # 访问宿主机的 Ollama（embedding，ADR-005）与 RSSHub（采集）
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ../scholar-shared/rubrics:/scholar-shared/rubrics:ro
     depends_on:
       postgres:
         condition: service_healthy
