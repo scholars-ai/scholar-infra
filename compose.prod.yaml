@@ -57,6 +57,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ../scholar-shared/rubrics:/scholar-shared/rubrics:ro
+      - ../scholar-shared/profiles:/scholar-shared/profiles:ro
     environment:
       WORKER_QUEUES: source_fetch
     depends_on:
@@ -73,6 +74,11 @@ services:
     <<: *agents
     environment:
       WORKER_QUEUES: topic_evaluate
+
+  agents-article-write:
+    <<: *agents
+    environment:
+      WORKER_QUEUES: article_write
 
   # Langfuse 自托管，与业务库共用 postgres 实例的独立 database（ADR-004）
   langfuse:

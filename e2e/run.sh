@@ -69,10 +69,18 @@ wait_http "http://127.0.0.1:${GRAFANA_HOST_PORT}/api/health"
 
 manual_response=$(curl --silent --fail \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Manual E2E Topic","angle":"A deterministic angle","summary":"Cross-repository test","targetPlatforms":["zhihu"]}' \
+  -d '{"title":"Manual E2E Topic","angle":"A deterministic angle","summary":"Cross-repository test","targetPlatforms":["xiaohongshu","zhihu","wechat"]}' \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics")
 manual_topic_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$manual_response")
 wait_sql "select status::text from topics where id = '$manual_topic_id'" scored
+
+curl --silent --fail -X POST \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${manual_topic_id}/approve" >/dev/null
+wait_sql "select status::text from topics where id = '$manual_topic_id'" written
+wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id'" 3
+wait_sql "select count(distinct platform)::text from articles where topic_id = '$manual_topic_id'" 3
+wait_sql "select count(*)::text from schedule_runs where schedule_key like 'article_evaluate:%' and msg_id is not null" 3
+wait_sql "select count(*)::text from pgmq.q_article_evaluate" 3
 
 curl --silent --fail \
   -H 'Content-Type: application/json' \
@@ -145,4 +153,4 @@ offline_response=$(curl --silent --fail \
 offline_topic_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$offline_response")
 wait_sql "select status::text from topics where id = '$offline_topic_id'" scored
 
-echo "E2E passed: manual topic, URL ingest, correlation trace, and telemetry-outage isolation"
+echo "E2E passed: M1 topic loop, three-platform M2 writing, article evaluation dispatch, tracing, and telemetry-outage isolation"

@@ -8,3 +8,6 @@ providers:
 tasks:
   topic_scout: fake/fake-scout
   topic_judge: fake/fake-judge
+  writer_outline: fake/fake-outline
+  writer_draft: fake/fake-draft
+  writer_self_critic: fake/fake-critic

@@ -47,6 +47,9 @@ services:
     env_file:
       - path: ./secrets/agents.env # 见 secrets/agents.env.example
         required: false
+    volumes:
+      - ../scholar-shared/rubrics:/scholar-shared/rubrics:ro
+      - ../scholar-shared/profiles:/scholar-shared/profiles:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +71,7 @@ services:
     volumes:
       - ./e2e/model_routing.yaml:/app/config/model_routing.yaml:ro
       - ../scholar-shared/rubrics:/scholar-shared/rubrics:ro
+      - ../scholar-shared/profiles:/scholar-shared/profiles:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -17,6 +17,30 @@ DIMENSIONS = (
 )
 
 
+def _writer_article(prompt: str) -> tuple[str, str]:
+    if "平台：xiaohongshu" in prompt:
+        title = "AI工程链路如何避坑"
+        paragraph = "这条工程实践从状态机、任务队列和追踪信息三个角度解释如何减少改动风险。"
+        content = "## 先看结论\n\n" + paragraph * 18
+        content += "\n\n## 三个检查点\n\n" + paragraph * 8
+        content += "\n\n建议先保存这份检查清单，再结合真实任务逐项验证。\n\n#人工智能 #工程实践 #可观测性"
+        return title, content
+    if "平台：wechat" in prompt:
+        title = "一条可追踪的 AI 流水线意味着什么"
+        paragraph = "可观测性不是额外装饰，而是把状态变化、队列交接和模型调用连成一条可验证证据链。"
+        content = "## 从一次状态变化说起\n\n" + paragraph * 22
+        content += "\n\n## 队列为什么需要留痕\n\n" + paragraph * 18
+        content += "\n\n## 把判断变成日常动作\n\n" + paragraph * 12
+        return title, content
+    title = "如何判断一条 AI 内容流水线是否可靠？"
+    paragraph = "判断这类系统是否可靠，关键不是看某个服务能否单独运行，而是验证状态机、事务消息和追踪上下文是否共同维持一致性。"
+    content = "## 先给结论\n\n" + paragraph * 24
+    content += "\n\n## 状态机提供业务边界\n\n" + paragraph * 18
+    content += "\n\n## 事务消息避免半完成状态\n\n" + paragraph * 16
+    content += "\n\n## 最后检查可观测证据\n\n" + paragraph * 10
+    return title, content
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/healthz":
@@ -60,7 +84,24 @@ class Handler(BaseHTTPRequestHandler):
         prompt = "\n".join(str(message.get("content") or "") for message in messages)
         tools = body.get("tools") or []
         schema = tools[0]["function"].get("parameters", {}) if tools else {}
-        if "timeliness" in json.dumps(schema):
+        schema_text = json.dumps(schema)
+        properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        if "sections" in properties:
+            raw_ids = list(dict.fromkeys(re.findall(r"[0-9a-f]{8}-[0-9a-f-]{27,}", prompt, re.I)))
+            result = {
+                "title": _writer_article(prompt)[0],
+                "sections": [
+                    {"heading": "先给结论", "purpose": "回应核心问题", "evidenceRawItemIds": raw_ids[:1]},
+                    {"heading": "拆解机制", "purpose": "解释证据链", "evidenceRawItemIds": raw_ids[:1]},
+                    {"heading": "行动清单", "purpose": "给出验证方法", "evidenceRawItemIds": raw_ids[:1]},
+                ],
+            }
+        elif "contentMarkdown" in properties:
+            title, content = _writer_article(prompt)
+            result = {"title": title, "contentMarkdown": content}
+            if "changes" in properties:
+                result["changes"] = ["核对事实边界", "按平台档案统一结构"]
+        elif "timeliness" in schema_text:
             result: dict[str, Any] = {
                 "dimensionScores": {
                     key: {"score": 8, "reason": f"deterministic reason for {key}"}
