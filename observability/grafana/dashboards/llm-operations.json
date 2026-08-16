@@ -1,0 +1,44 @@
+{
+  "uid": "scholars-llm",
+  "title": "Scholars AI - LLM Operations",
+  "schemaVersion": 40,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["scholars-ai"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "LLM P95 by provider/model",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, provider, model) (rate(scholar_agent_llm_duration_seconds_bucket[5m])))", "legendFormat": "{{provider}} / {{model}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Structured retries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (provider, model) (rate(scholar_agent_structured_retries_total[5m]))", "legendFormat": "{{provider}} / {{model}}" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Embedding P95",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, provider, model) (rate(scholar_agent_embedding_duration_seconds_bucket[5m])))", "legendFormat": "{{provider}} / {{model}}" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Provider errors",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum by (error_type) (rate(scholar_agent_jobs_failed_total[5m]))", "legendFormat": "{{error_type}}" }]
+    }
+  ]
+}

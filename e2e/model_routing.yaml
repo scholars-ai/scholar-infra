@@ -1,0 +1,10 @@
+providers:
+  fake:
+    protocol: openai
+    base_url: http://fake-ai:8081/v1
+    api_key_env: FAKE_AI_API_KEY
+    json_mode: tool
+
+tasks:
+  topic_scout: fake/fake-scout
+  topic_judge: fake/fake-judge

@@ -6,7 +6,8 @@ scholars-ai 的部署编排：docker compose、部署脚本、密钥模板。架
 
 ```
 compose.local.yaml    本地开发：Postgres（pgvector+pgmq）一键起；--profile services 联调 core/agents 容器
-compose.prod.yaml     生产（VPS）：自托管 Postgres + core + agents + Langfuse
+compose.prod.yaml     生产（VPS）：Postgres + queue-specific Agents + Langfuse + OTel stack
+observability/        Collector / Tempo / Prometheus / Grafana 配置、Dashboard 与告警
 postgres/Dockerfile   本地开发库镜像（pgvector 官方镜像 + pgmq 扩展）
 deploy.sh             VPS 部署：./deploy.sh <core|agents|all> <version>（拉 GHCR 镜像滚动更新）
 secrets/*.example     密钥模板。真实密钥只存在于 VPS 部署工作区，绝不入库
@@ -19,6 +20,38 @@ docker compose -f compose.local.yaml up -d          # 只起数据库
 # core:   cd ../scholar-core   && make migrate-up && make run
 # agents: cd ../scholar-agents && uv run python -m scholar_agents.worker.consumer
 ```
+
+本地 Compose 默认同时启动可观测性依赖：
+
+- Grafana: `http://127.0.0.1:3302`（本地默认 admin/admin）
+- Prometheus: `http://127.0.0.1:9090`
+- OTLP gRPC/HTTP: `127.0.0.1:4317/4318`，供宿主机运行的 Core/Agents 上报
+- Tempo 只在容器网络开放
+
+宿主机直接运行服务时设置：
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 # Agents
+# Core 同时接受 127.0.0.1:4317 或 http://127.0.0.1:4317
+export OTEL_EXPORTER_OTLP_INSECURE=true
+```
+
+链路关系固定为：`Core/Agents -> Collector -> Tempo/Prometheus -> Grafana`。
+LLM 的 prompt/output/token 明细仍在 Langfuse，Tempo Span 只保存
+`langfuse.trace_id` 等低敏感属性，并由 Job Explorer Dashboard 跳转。
+
+## 可观测性运行原则
+
+- Collector/Tempo/Prometheus 不可用不影响业务 job；SDK 使用异步批量导出。
+- Tempo 不保存 prompt、模型完整输出、正文、URL、密钥或数据库 DSN。
+- Prometheus label 只使用 queue/job type/status/provider/model/error type 等有限集合。
+- Trace 保留 7 天，Metrics 保留 30 天；初期 pipeline job 100% 采样。
+- Grafana 生产端口只绑定 `127.0.0.1:3302`，应由现有 nginx 加 TLS/认证后访问。
+- 生产 Agents 按 `source_fetch`、`topic_scout`、`topic_evaluate` 分成三个进程，避免慢队列阻塞其他队列；每个进程仍使用独立数据库连接。
+
+已预置 Dashboard：Operations Overview、Job Explorer、Queues、LLM Operations。
+已预置低流量友好的核心告警。磁盘水位告警仍由现有 `scripts/disk-guard.sh`
+承担；若未来接入 node-exporter，再迁入 Prometheus 统一告警。
 
 ## 密钥纪律（硬性）
 

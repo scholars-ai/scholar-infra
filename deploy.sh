@@ -15,8 +15,12 @@ deploy_one() {
     agents) export AGENTS_VERSION="$ver" ;;
     *) echo "unknown service: $svc" >&2; exit 1 ;;
   esac
-  docker compose -f compose.prod.yaml pull "$svc"
-  docker compose -f compose.prod.yaml up -d "$svc"
+  local services=("$svc")
+  if [ "$svc" = "agents" ]; then
+    services=(agents-source-fetch agents-topic-scout agents-topic-evaluate)
+  fi
+  docker compose -f compose.prod.yaml pull "${services[@]}"
+  docker compose -f compose.prod.yaml up -d "${services[@]}"
   echo "deployed $svc @ $ver"
 }
 

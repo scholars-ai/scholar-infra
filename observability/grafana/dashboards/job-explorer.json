@@ -1,0 +1,57 @@
+{
+  "uid": "scholars-job-explorer",
+  "title": "Scholars AI - Job Explorer",
+  "schemaVersion": 40,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": false,
+  "tags": ["scholars-ai"],
+  "templating": {
+    "list": [
+      { "name": "job_id", "type": "textbox", "label": "Job ID", "query": "", "current": { "text": "", "value": "" } },
+      { "name": "correlation_id", "type": "textbox", "label": "Correlation ID", "query": "", "current": { "text": "", "value": "" } },
+      { "name": "topic_id", "type": "textbox", "label": "Topic ID", "query": "", "current": { "text": "", "value": "" } },
+      { "name": "langfuse_base_url", "type": "textbox", "label": "Langfuse URL", "query": "http://localhost:3301", "current": { "text": "http://localhost:3301", "value": "http://localhost:3301" } }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "traces",
+      "title": "Search by correlation/job/topic",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 11 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ resource.service.name =~ \"scholar-(core|agents)\" && (span.job.id = \"$job_id\" || span.correlation.id = \"$correlation_id\" || span.topic.id = \"$topic_id\") }"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "LLM spans with Langfuse trace IDs",
+      "gridPos": { "x": 0, "y": 11, "w": 24, "h": 9 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{ span.langfuse.trace_id != nil } | select(span.langfuse.trace_id, span.gen_ai.request.model, span.correlation.id)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "langfuse.trace_id" },
+            "properties": [
+              { "id": "links", "value": [{ "title": "Open in Langfuse", "url": "${langfuse_base_url}/trace/${__value.raw}", "targetBlank": true }] }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

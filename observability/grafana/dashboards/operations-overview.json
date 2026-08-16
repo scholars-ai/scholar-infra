@@ -1,0 +1,68 @@
+{
+  "uid": "scholars-operations",
+  "title": "Scholars AI - Operations Overview",
+  "schemaVersion": 40,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "tags": ["scholars-ai"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Job success rate (5m)",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(rate(scholar_agent_jobs_completed_total[5m])) / clamp_min(sum(rate(scholar_agent_jobs_started_total[5m])), 0.0001)", "legendFormat": "success" }],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Visible queue backlog",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(scholar_pgmq_visible_messages)", "legendFormat": "messages" }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Oldest visible message",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "max(scholar_pgmq_oldest_visible_age_seconds)", "legendFormat": "age" }],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Dead letters (24h)",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "sum(increase(scholar_agent_jobs_dead_lettered_total[24h]))", "legendFormat": "dead letters" }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "End-to-end job duration P50/P95/P99",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(scholar_agent_job_duration_seconds_bucket[5m])))", "legendFormat": "P50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(scholar_agent_job_duration_seconds_bucket[5m])))", "legendFormat": "P95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum by (le) (rate(scholar_agent_job_duration_seconds_bucket[5m])))", "legendFormat": "P99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Core API errors and DB pool",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "expr": "sum by (error_type) (rate(scholar_core_api_errors_total[5m]))", "legendFormat": "API {{error_type}}" },
+        { "refId": "B", "expr": "sum(db_client_connections_usage{service_name=\"scholar-core\"})", "legendFormat": "DB acquired" }
+      ]
+    }
+  ]
+}

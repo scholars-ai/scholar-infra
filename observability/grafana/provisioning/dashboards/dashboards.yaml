@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Scholars AI
+    orgId: 1
+    folder: Scholars AI
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

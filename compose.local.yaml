@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: scholar # 仅本地开发；生产用 Supabase
       POSTGRES_DB: scholar
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -27,8 +27,11 @@ services:
     environment:
       DATABASE_URL: postgres://scholar:scholar@postgres:5432/scholar?sslmode=disable
       CORE_ADDR: ":8080"
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      DEPLOYMENT_ENVIRONMENT: local
     ports:
-      - "8080:8080"
+      - "${CORE_HOST_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,6 +41,9 @@ services:
     build: ../scholar-agents
     environment:
       DATABASE_URL: postgres://scholar:scholar@postgres:5432/scholar?sslmode=disable
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      DEPLOYMENT_ENVIRONMENT: local
     env_file:
       - path: ./secrets/agents.env # 见 secrets/agents.env.example
         required: false
@@ -45,5 +51,109 @@ services:
       postgres:
         condition: service_healthy
 
+  agents-e2e:
+    profiles: ["e2e"]
+    build: ../scholar-agents
+    environment:
+      DATABASE_URL: postgres://scholar:scholar@postgres:5432/scholar?sslmode=disable
+      FAKE_AI_API_KEY: e2e-key
+      SF_API_KEY: e2e-key
+      SF_BASE_URL: http://fake-ai:8081/v1
+      SF_EMBED_MODEL: fake-embedding
+      EMBED_BACKEND: siliconflow
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      DEPLOYMENT_ENVIRONMENT: e2e
+      JOB_TIMEOUT_SECONDS: "120"
+    volumes:
+      - ./e2e/model_routing.yaml:/app/config/model_routing.yaml:ro
+      - ../scholar-shared/rubrics:/scholar-shared/rubrics:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fake-ai:
+        condition: service_started
+
+  fake-ai:
+    profiles: ["e2e"]
+    image: python:3.12-alpine
+    command: ["python", "/e2e/fake_ai.py"]
+    volumes:
+      - ./e2e/fake_ai.py:/e2e/fake_ai.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz')"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.131.1
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # Core/Agents 在宿主机直接运行时通过 localhost 上报；只绑定本机。
+      - "127.0.0.1:${OTEL_GRPC_HOST_PORT:-4317}:4317"
+      - "127.0.0.1:${OTEL_HTTP_HOST_PORT:-4318}:4318"
+      - "127.0.0.1:${OTEL_HEALTH_HOST_PORT:-13133}:13133"
+    depends_on:
+      - tempo
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  tempo:
+    image: grafana/tempo:2.8.2
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./observability/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - ./observability/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-9090}:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_HOST_PORT:-3302}:3000"
+    depends_on:
+      - prometheus
+      - tempo
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
 volumes:
   pgdata:
+  tempo-data:
+  prometheus-data:
+  grafana-data:

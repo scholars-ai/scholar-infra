@@ -1,0 +1,65 @@
+groups:
+  - name: scholars-ai
+    rules:
+      - alert: PGMQOldestMessageTooOld
+        expr: max by (queue) (scholar_pgmq_oldest_visible_age_seconds) > 300
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "PGMQ queue {{ $labels.queue }} oldest message exceeds 5 minutes"
+
+      - alert: AgentDeadLetterAdded
+        expr: sum(increase(scholar_agent_jobs_dead_lettered_total[5m])) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "A Scholars AI job entered dead-letter storage"
+
+      - alert: AgentFailureRateHigh
+        expr: |
+          sum(increase(scholar_agent_jobs_failed_total[10m]))
+          /
+          clamp_min(sum(increase(scholar_agent_jobs_started_total[10m])), 1) > 0.10
+          and sum(increase(scholar_agent_jobs_started_total[10m])) >= 10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Agent job failure rate exceeds 10% with at least 10 samples"
+
+      - alert: TopicJudgeP95Slow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(scholar_agent_job_duration_seconds_bucket{queue="topic_evaluate"}[10m]))) > 120
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "TopicJudge P95 exceeds 120 seconds"
+
+      - alert: HarvesterTickSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(scholar_core_harvester_tick_duration_seconds_bucket[10m]))) > 60
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Harvester P95 exceeds 60 seconds"
+
+      - alert: CoreAPI5xx
+        expr: sum(increase(scholar_core_api_errors_total{error_type="http_5xx"}[5m])) > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scholar Core API is returning 5xx responses"
+
+      - alert: OTelCollectorExporterFailures
+        expr: sum(rate(otelcol_exporter_send_failed_spans_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "OpenTelemetry Collector cannot export spans"
+
+      - alert: ScholarsMetricsMissing
+        expr: absent(scholar_core_scheduler_ticks_total) or absent(scholar_agent_jobs_started_total)
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Core or Agents metrics have not reached Prometheus"
