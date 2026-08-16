@@ -112,6 +112,7 @@ grep -q 'langfuse.trace_id' <<<"$trace_detail"
 
 agent_metric_found=""
 core_metric_found=""
+queue_depth_metrics_found=""
 for _ in $(seq 1 30); do
   agent_metric_result=$(curl --silent --fail --get \
     --data-urlencode 'query=scholar_agent_jobs_completed_total' \
@@ -119,14 +120,18 @@ for _ in $(seq 1 30); do
   core_metric_result=$(curl --silent --fail --get \
     --data-urlencode 'query=scholar_pgmq_total_messages' \
     "http://127.0.0.1:${PROMETHEUS_HOST_PORT}/api/v1/query")
+  queue_depth_metrics_result=$(curl --silent --fail --get \
+    --data-urlencode 'query=count(scholar_pgmq_visible_messages) + count(scholar_pgmq_in_flight_messages) + count(scholar_pgmq_current_messages)' \
+    "http://127.0.0.1:${PROMETHEUS_HOST_PORT}/api/v1/query")
   agent_metric_found=$(python3 -c 'import json,sys; data=json.load(sys.stdin); print("yes" if data.get("data", {}).get("result") else "")' <<<"$agent_metric_result")
   core_metric_found=$(python3 -c 'import json,sys; data=json.load(sys.stdin); print("yes" if data.get("data", {}).get("result") else "")' <<<"$core_metric_result")
-  if [ -n "$agent_metric_found" ] && [ -n "$core_metric_found" ]; then
+  queue_depth_metrics_found=$(python3 -c 'import json,sys; data=json.load(sys.stdin); print("yes" if data.get("data", {}).get("result") else "")' <<<"$queue_depth_metrics_result")
+  if [ -n "$agent_metric_found" ] && [ -n "$core_metric_found" ] && [ -n "$queue_depth_metrics_found" ]; then
     break
   fi
   sleep 2
 done
-if [ -z "$agent_metric_found" ] || [ -z "$core_metric_found" ]; then
+if [ -z "$agent_metric_found" ] || [ -z "$core_metric_found" ] || [ -z "$queue_depth_metrics_found" ]; then
   echo "timed out waiting for exported Core and Agents metrics" >&2
   exit 1
 fi

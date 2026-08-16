@@ -2,45 +2,207 @@
   "uid": "scholars-queues",
   "title": "Scholars AI - Queues",
   "schemaVersion": 40,
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "refresh": "30s",
-  "tags": ["scholars-ai"],
+  "tags": [
+    "scholars-ai"
+  ],
   "panels": [
     {
       "id": 1,
-      "type": "timeseries",
-      "title": "Visible messages by queue",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "type": "stat",
+      "title": "Waiting tasks",
+      "description": "Messages visible to workers and still waiting to be claimed.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "scholar_pgmq_visible_messages", "legendFormat": "{{queue}}" }]
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(scholar_pgmq_visible_messages)",
+          "legendFormat": "waiting"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0 },
+        "overrides": []
+      }
     },
     {
       "id": 2,
-      "type": "timeseries",
-      "title": "Oldest visible age",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "type": "stat",
+      "title": "In-flight tasks",
+      "description": "Messages already claimed by a worker and currently being processed.",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "scholar_pgmq_oldest_visible_age_seconds", "legendFormat": "{{queue}}" }],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(scholar_pgmq_in_flight_messages)",
+          "legendFormat": "in flight"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0 },
+        "overrides": []
+      }
     },
     {
       "id": 3,
-      "type": "timeseries",
-      "title": "Queue wait P95",
-      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "type": "stat",
+      "title": "Current tasks",
+      "description": "Waiting plus in-flight messages currently present in PGMQ.",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, queue) (rate(scholar_agent_queue_wait_seconds_bucket[5m])))", "legendFormat": "{{queue}}" }],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(scholar_pgmq_current_messages)",
+          "legendFormat": "current"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0 },
+        "overrides": []
+      }
     },
     {
       "id": 4,
-      "type": "timeseries",
-      "title": "Retry and dead-letter rate",
-      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "type": "stat",
+      "title": "Online worker slots",
+      "description": "Queue-specific worker processes currently online. In-flight tasks show how many slots are busy.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "refId": "A", "expr": "sum by (queue) (rate(scholar_agent_jobs_retried_total[5m]))", "legendFormat": "retry {{queue}}" },
-        { "refId": "B", "expr": "sum by (queue) (rate(scholar_agent_jobs_dead_lettered_total[5m]))", "legendFormat": "dead {{queue}}" }
+        {
+          "refId": "A",
+          "expr": "sum(scholar_agent_worker_concurrency)",
+          "legendFormat": "online"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Waiting tasks by queue",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "scholar_pgmq_visible_messages",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "In-flight tasks by queue",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "scholar_pgmq_in_flight_messages",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Current tasks by queue",
+      "description": "Waiting plus in-flight tasks. This reaches zero only when the queue is fully idle.",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "scholar_pgmq_current_messages",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Oldest waiting task age",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "scholar_pgmq_oldest_visible_age_seconds",
+          "legendFormat": "{{queue}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Worker slots and active tasks",
+      "description": "Online is worker capacity; active is the number of claimed messages currently being processed.",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (queue) (scholar_agent_worker_concurrency)",
+          "legendFormat": "online {{queue}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (queue) (scholar_pgmq_in_flight_messages)",
+          "legendFormat": "active {{queue}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Queue wait P95",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le, queue) (rate(scholar_agent_queue_wait_seconds_bucket[5m])))",
+          "legendFormat": "{{queue}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Retry and dead-letter rate",
+      "gridPos": { "x": 0, "y": 29, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (queue) (rate(scholar_agent_jobs_retried_total[5m]))",
+          "legendFormat": "retry {{queue}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (queue) (rate(scholar_agent_jobs_dead_lettered_total[5m]))",
+          "legendFormat": "dead {{queue}}"
+        }
       ]
     }
   ]

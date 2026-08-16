@@ -53,6 +53,15 @@ LLM 的 prompt/output/token 明细仍在 Langfuse，Tempo Span 只保存
 已预置低流量友好的核心告警。磁盘水位告警仍由现有 `scripts/disk-guard.sh`
 承担；若未来接入 node-exporter，再迁入 Prometheus 统一告警。
 
+Queues Dashboard 的任务数量口径：
+
+- `Waiting tasks`：尚未被 Worker 领取的可见消息；持续上升代表消费跟不上。
+- `In-flight tasks`：已被 Worker 领取、正在 visibility timeout 内处理的消息。
+- `Current tasks`：Waiting + In-flight；只有它为 0 才表示队列完全空闲。
+- `Online worker slots`：当前在线的 queue-specific Worker 容量；不等于正在执行数，
+  是否繁忙应同时对照 In-flight。
+- `scholar_pgmq_total_messages`：队列自创建以来的累计投递数，不是当前队列深度。
+
 ## 密钥纪律（硬性）
 
 - `secrets/` 下除 `*.example` 全部 gitignore；

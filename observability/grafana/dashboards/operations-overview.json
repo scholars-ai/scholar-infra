@@ -9,24 +9,31 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Job success rate (5m)",
+      "title": "Job attempt success rate (30m)",
+      "description": "Completed attempts divided by started attempts over 30 minutes. A longer window is used because production traffic is low.",
       "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "sum(rate(scholar_agent_jobs_completed_total[5m])) / clamp_min(sum(rate(scholar_agent_jobs_started_total[5m])), 0.0001)", "legendFormat": "success" }],
+      "targets": [{ "refId": "A", "expr": "clamp_max(sum(increase(scholar_agent_jobs_completed_total[30m])) / clamp_min(sum(increase(scholar_agent_jobs_started_total[30m])), 1), 1)", "legendFormat": "success" }],
       "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] }
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Visible queue backlog",
+      "title": "Queue: waiting / active / total",
+      "description": "Waiting messages are visible; active messages have been claimed by workers; total is their sum.",
       "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "sum(scholar_pgmq_visible_messages)", "legendFormat": "messages" }]
+      "targets": [
+        { "refId": "A", "expr": "sum(scholar_pgmq_visible_messages)", "legendFormat": "waiting" },
+        { "refId": "B", "expr": "sum(scholar_pgmq_in_flight_messages)", "legendFormat": "active" },
+        { "refId": "C", "expr": "sum(scholar_pgmq_current_messages)", "legendFormat": "total" }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] }
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Oldest visible message",
+      "title": "Oldest waiting task",
       "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [{ "refId": "A", "expr": "max(scholar_pgmq_oldest_visible_age_seconds)", "legendFormat": "age" }],
@@ -38,7 +45,8 @@
       "title": "Dead letters (24h)",
       "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "sum(increase(scholar_agent_jobs_dead_lettered_total[24h]))", "legendFormat": "dead letters" }]
+      "targets": [{ "refId": "A", "expr": "sum(increase(scholar_agent_jobs_dead_lettered_total[24h]))", "legendFormat": "dead letters" }],
+      "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] }
     },
     {
       "id": 5,
@@ -61,7 +69,9 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "expr": "sum by (error_type) (rate(scholar_core_api_errors_total[5m]))", "legendFormat": "API {{error_type}}" },
-        { "refId": "B", "expr": "sum(db_client_connections_usage{service_name=\"scholar-core\"})", "legendFormat": "DB acquired" }
+        { "refId": "B", "expr": "scholar_core_db_pool_acquired", "legendFormat": "DB acquired" },
+        { "refId": "C", "expr": "scholar_core_db_pool_idle", "legendFormat": "DB idle" },
+        { "refId": "D", "expr": "scholar_core_db_pool_max", "legendFormat": "DB max" }
       ]
     }
   ]
