@@ -85,6 +85,12 @@ services:
     environment:
       WORKER_QUEUES: article_evaluate
 
+  agents-memory-reflect:
+    <<: *agents
+    environment:
+      WORKER_QUEUES: memory_reflect
+      JOB_TIMEOUT_SECONDS: "600"
+
   # Langfuse 自托管，与业务库共用 postgres 实例的独立 database（ADR-004）
   langfuse:
     image: langfuse/langfuse:2

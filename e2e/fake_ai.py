@@ -18,6 +18,7 @@ DIMENSIONS = (
 
 
 def _writer_article(prompt: str) -> tuple[str, str]:
+    memory_guided = "写作标题优先使用具体结果" in prompt
     if "平台：xiaohongshu" in prompt:
         title = "AI工程链路如何避坑"
         paragraph = "这条工程实践从状态机、任务队列和追踪信息三个角度解释如何减少改动风险。"
@@ -32,7 +33,11 @@ def _writer_article(prompt: str) -> tuple[str, str]:
         content += "\n\n## 队列为什么需要留痕\n\n" + paragraph * 18
         content += "\n\n## 把判断变成日常动作\n\n" + paragraph * 12
         return title, content
-    title = "如何判断一条 AI 内容流水线是否可靠？"
+    title = (
+        "记忆注入：如何判断一条 AI 内容流水线是否可靠？"
+        if memory_guided
+        else "如何判断一条 AI 内容流水线是否可靠？"
+    )
     paragraph = "判断这类系统是否可靠，关键不是看某个服务能否单独运行，而是验证状态机、事务消息和追踪上下文是否共同维持一致性。"
     content = "## 先给结论\n\n" + paragraph * 24
     content += "\n\n## 状态机提供业务边界\n\n" + paragraph * 18
@@ -86,7 +91,59 @@ class Handler(BaseHTTPRequestHandler):
         schema = tools[0]["function"].get("parameters", {}) if tools else {}
         schema_text = json.dumps(schema)
         properties = schema.get("properties", {}) if isinstance(schema, dict) else {}
-        if "sections" in properties:
+        if "summaryMarkdown" in properties:
+            publication_ids = list(
+                dict.fromkeys(
+                    re.findall(
+                        r'"publicationId"\s*:\s*"([0-9a-f-]{36})"', prompt, re.I
+                    )
+                )
+            )
+            article_ids = list(
+                dict.fromkeys(
+                    re.findall(r'"articleId"\s*:\s*"([0-9a-f-]{36})"', prompt, re.I)
+                )
+            )
+            result = {
+                "summaryMarkdown": (
+                    "# Deterministic M3 weekly report\n\n"
+                    "同平台同窗口样本的表现分已由确定性代码计算。"
+                    "高表现样本的标题更具体；当前仍处于冷启动，不自动调权。"
+                ),
+                "insights": [
+                    {
+                        "action": "create",
+                        "existingInsightId": None,
+                        "kind": "writing_lesson",
+                        "platform": None,
+                        "content": "写作标题优先使用具体结果和可验证数字，并在首段兑现承诺。",
+                        "evidence": [
+                            {
+                                "articleIds": article_ids[:1],
+                                "publicationIds": publication_ids[:1],
+                                "note": "Deterministic E2E evidence from an h24 performance case.",
+                            }
+                        ],
+                        "confidence": 0.7,
+                    },
+                    {
+                        "action": "create",
+                        "existingInsightId": None,
+                        "kind": "topic_lesson",
+                        "platform": None,
+                        "content": "TopicScout 优先选择能明确回答读者具体工程问题的角度。",
+                        "evidence": [
+                            {
+                                "articleIds": article_ids[:1],
+                                "publicationIds": publication_ids[:1],
+                                "note": "Deterministic E2E topic evidence from an h24 case.",
+                            }
+                        ],
+                        "confidence": 0.7,
+                    },
+                ],
+            }
+        elif "sections" in properties:
             raw_ids = list(dict.fromkeys(re.findall(r"[0-9a-f]{8}-[0-9a-f-]{27,}", prompt, re.I)))
             result = {
                 "title": _writer_article(prompt)[0],
@@ -138,7 +195,11 @@ class Handler(BaseHTTPRequestHandler):
             result = {
                 "topics": [
                     {
-                        "title": "Deterministic E2E Topic",
+                        "title": (
+                            "Memory-Aware Deterministic E2E Topic"
+                            if "TopicScout 优先选择能明确回答" in prompt
+                            else "Deterministic E2E Topic"
+                        ),
                         "angle": "Explain why a fully observable AI pipeline is safer to evolve.",
                         "summary": "A fake-provider E2E topic produced from the ingested article.",
                         "rawItemIds": raw_ids[:1],

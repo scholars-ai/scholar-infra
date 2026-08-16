@@ -12,3 +12,4 @@ tasks:
   writer_draft: fake/fake-draft
   writer_self_critic: fake/fake-critic
   article_judge: fake/fake-article-judge
+  reflector: fake/fake-reflector

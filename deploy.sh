@@ -23,6 +23,7 @@ deploy_one() {
       agents-topic-evaluate
       agents-article-write
       agents-article-evaluate
+      agents-memory-reflect
     )
   fi
   docker compose -f compose.prod.yaml pull "${services[@]}"

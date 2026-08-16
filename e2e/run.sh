@@ -116,7 +116,7 @@ curl --silent --fail -X POST -H 'Content-Type: application/json' \
 wait_sql "select count(*)::text from articles where id in ('$xhs_article_id','$zhihu_article_id') and status = 'approved'" 2
 wait_sql "select status::text from articles where id = '$wechat_article_id'" rejected
 
-publication_payload=$(python3 -c 'import json,sys; data=json.load(sys.stdin); article=data["article"]; print(json.dumps({"platformPostId":"https://example.test/scholars-e2e-xhs","finalTitle":article["title"]+"（人工终稿）","finalContentMd":article["contentMd"]+"\n\n人工补充：这是一处可追溯的小幅修改。","followerCountAtPublish":1234}, ensure_ascii=False))' <<<"$xhs_detail")
+publication_payload=$(python3 -c 'import json,sys; from datetime import datetime,timedelta,timezone; data=json.load(sys.stdin); article=data["article"]; published=(datetime.now(timezone.utc)-timedelta(days=8)).isoformat(); print(json.dumps({"platformPostId":"https://example.test/scholars-e2e-xhs","publishedAt":published,"finalTitle":article["title"]+"（人工终稿）","finalContentMd":article["contentMd"]+"\n\n人工补充：这是一处可追溯的小幅修改。","followerCountAtPublish":1234}, ensure_ascii=False))' <<<"$xhs_detail")
 publication_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
   -d "$publication_payload" \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications")
@@ -132,11 +132,92 @@ duplicate_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications")
 test "$duplicate_status" = 409
 
+# M3 数据回流：同一平台同一窗口的三个样本必须得到确定性的 0/50/100 百分位，
+# 标准窗口补录后提醒消失，随后进入 Reflector 周报和 evidence 非空的 insight。
+publication_payload_2=$(python3 -c 'import json,sys; data=json.load(sys.stdin); data["platformPostId"]="https://example.test/scholars-e2e-xhs-2"; print(json.dumps(data, ensure_ascii=False))' <<<"$publication_payload")
+publication_payload_3=$(python3 -c 'import json,sys; data=json.load(sys.stdin); data["platformPostId"]="https://example.test/scholars-e2e-xhs-3"; print(json.dumps(data, ensure_ascii=False))' <<<"$publication_payload")
+publication_id_2=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "$publication_payload_2" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications" | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+publication_id_3=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "$publication_payload_3" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications" | \
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+captured_at=$(python3 -c 'from datetime import datetime,timedelta,timezone; print((datetime.now(timezone.utc)-timedelta(days=7)).isoformat())')
+for spec in "$publication_id:100" "$publication_id_2:200" "$publication_id_3:300"; do
+  metric_publication_id=${spec%%:*}
+  metric_views=${spec##*:}
+  metric_payload=$(python3 -c 'import json,sys; publication_id,views,captured=sys.argv[1:]; print(json.dumps({"snapshotWindow":"h24","capturedAt":captured,"metrics":{"views":int(views),"likes":int(views)//10,"favorites":int(views)//20,"comments":2,"shares":1,"follows":1}}))' "$metric_publication_id" "$metric_views" "$captured_at")
+  curl --silent --fail -X POST -H 'Content-Type: application/json' \
+    -d "$metric_payload" \
+    "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/publications/${metric_publication_id}/metrics" >/dev/null
+done
+wait_sql "select string_agg(round(performance_percentile)::int::text, ',' order by performance_percentile) from metric_snapshots where publication_id in ('$publication_id','$publication_id_2','$publication_id_3') and snapshot_window='h24'" "0,50,100"
+
+import_payload=$(python3 -c 'import json,sys; from datetime import datetime,timedelta,timezone; p2,p3=sys.argv[1:]; captured=(datetime.now(timezone.utc)-timedelta(days=5)).isoformat(); metrics={"views":400,"likes":40,"favorites":20,"comments":6,"shares":3,"follows":2}; print(json.dumps({"items":[{"publicationId":p2,"snapshotWindow":"h72","capturedAt":captured,"metrics":metrics},{"publicationId":p3,"snapshotWindow":"h72","capturedAt":captured,"metrics":metrics}]}))' "$publication_id_2" "$publication_id_3")
+curl --silent --fail -X POST -H 'Content-Type: application/json' -d "$import_payload" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/metrics/import" >/dev/null
+wait_sql "select count(*)::text from metric_snapshots where publication_id in ('$publication_id_2','$publication_id_3') and snapshot_window='h72' and source='import'" 2
+
+before_atomic_count=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select count(*) from metric_snapshots where publication_id='$publication_id_3' and snapshot_window='custom'")
+bad_import_payload=$(python3 -c 'import json,sys; from datetime import datetime,timezone; p1,p3=sys.argv[1:]; captured=datetime.now(timezone.utc).isoformat(); metrics={"views":999,"likes":1,"favorites":1,"comments":1,"shares":1,"follows":1}; print(json.dumps({"items":[{"publicationId":p1,"snapshotWindow":"h24","capturedAt":captured,"metrics":metrics},{"publicationId":p3,"snapshotWindow":"custom","capturedAt":captured,"metrics":metrics}]}))' "$publication_id" "$publication_id_3")
+bad_import_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
+  -H 'Content-Type: application/json' -d "$bad_import_payload" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/metrics/import")
+test "$bad_import_status" = 409
+after_atomic_count=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select count(*) from metric_snapshots where publication_id='$publication_id_3' and snapshot_window='custom'")
+test "$before_atomic_count" = "$after_atomic_count"
+
+reminders=$(curl --silent --fail --get --data-urlencode 'remindersOnly=true' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/publications")
+python3 -c 'import json,sys; data=json.load(sys.stdin); target=next(item for item in data["items"] if item["publication"]["id"]==sys.argv[1]); assert {r["snapshotWindow"] for r in target["reminders"]}=={"h72","d7"}, target' "$publication_id" <<<"$reminders"
+
+for window in h72 d7; do
+  window_payload=$(python3 -c 'import json,sys; from datetime import datetime,timedelta,timezone; window=sys.argv[1]; days=5 if window=="h72" else 0; captured=(datetime.now(timezone.utc)-timedelta(days=days)).isoformat(); print(json.dumps({"snapshotWindow":window,"capturedAt":captured,"metrics":{"views":500,"likes":50,"favorites":30,"comments":8,"shares":4,"follows":2}}))' "$window")
+  curl --silent --fail -X POST -H 'Content-Type: application/json' \
+    -d "$window_payload" \
+    "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/publications/${publication_id}/metrics" >/dev/null
+done
+publication_metrics=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/publications/${publication_id}/metrics")
+test "$(python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' <<<"$publication_metrics")" = 3
+
+reflect_period=$(python3 -c 'import json; from datetime import datetime,timedelta,timezone; end=datetime.now(timezone.utc); print(json.dumps({"periodStart":(end-timedelta(days=10)).isoformat(),"periodEnd":end.isoformat()}))')
+curl --silent --fail -X POST -H 'Content-Type: application/json' -d "$reflect_period" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/reflections/run" >/dev/null
+wait_sql "select count(*)::text from weekly_reports" 1
+wait_sql "select count(*)::text from insights where jsonb_array_length(evidence) > 0" 2
+wait_sql "select count(*)::text from pgmq.q_memory_reflect" 0
+weekly_report=$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/reports/weekly")
+python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data)==1; report=data[0]; assert report["sampleCount"]>=3; assert report["calibration"]["coldStart"] is True; assert report["calibration"]["correlations"]' <<<"$weekly_report"
+insight_response=$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/insights")
+insight_ids=$(python3 -c 'import json,sys; data=json.load(sys.stdin); assert len(data)==2 and all(item["evidence"] for item in data); print(" ".join(item["id"] for item in data))' <<<"$insight_response")
+for insight_id in $insight_ids; do
+  curl --silent --fail -X PATCH -H 'Content-Type: application/json' -d '{"status":"active"}' \
+    "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/insights/${insight_id}" >/dev/null
+done
+wait_sql "select count(*)::text from insights where status='active' and manual_status_override" 2
+
 curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d '{"url":"http://fake-ai:8081/article","note":"cross-repository e2e"}' \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/ingest/url" >/dev/null
 wait_sql "select coalesce((select t.status::text from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url = 'http://fake-ai:8081/article' order by t.created_at desc limit 1), '')" scored
+memory_topic_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select t.id from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url='http://fake-ai:8081/article' order by t.created_at desc limit 1")
+wait_sql "select title from topics where id='$memory_topic_id'" "Memory-Aware Deterministic E2E Topic"
+curl --silent --fail -X POST \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${memory_topic_id}/approve" >/dev/null
+wait_sql "select status::text from topics where id='$memory_topic_id'" written
+wait_sql "select count(*)::text from articles where topic_id='$memory_topic_id' and title like '记忆注入：%'" 1
+
+retired_insight_id=${insight_ids%% *}
+curl --silent --fail -X PATCH -H 'Content-Type: application/json' -d '{"status":"retired"}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/insights/${retired_insight_id}" >/dev/null
+wait_sql "select count(*)::text from insights where id='$retired_insight_id' and status='retired' and manual_status_override" 1
 
 correlation_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
   "select correlation_id from raw_items where url = 'http://fake-ai:8081/article' order by created_at desc limit 1")
@@ -203,4 +284,4 @@ offline_response=$(curl --silent --fail \
 offline_topic_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$offline_response")
 wait_sql "select status::text from topics where id = '$offline_topic_id'" scored
 
-echo "E2E passed: M1 topic loop; M2 writing, judging, immutable rewrite, human review, publication diff/edit ratio; tracing and telemetry-outage isolation"
+echo "E2E passed: M1 topic loop; M2 writing/review/publication; M3 metrics, percentiles, reminders, Reflector, reports and insight governance; tracing and telemetry-outage isolation"
