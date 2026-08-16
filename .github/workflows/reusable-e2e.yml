@@ -1,0 +1,80 @@
+name: Reusable cross-repository E2E
+
+on:
+  workflow_call:
+    inputs:
+      infra_repository:
+        description: Repository containing the infra revision under test
+        required: true
+        type: string
+      infra_ref:
+        description: Infra git ref or SHA under test
+        required: true
+        type: string
+      core_repository:
+        description: Repository containing the core revision under test
+        required: true
+        type: string
+      core_ref:
+        description: Core git ref or SHA under test
+        required: true
+        type: string
+      agents_repository:
+        description: Repository containing the agents revision under test
+        required: true
+        type: string
+      agents_ref:
+        description: Agents git ref or SHA under test
+        required: true
+        type: string
+      shared_repository:
+        description: Repository containing the shared revision under test
+        required: true
+        type: string
+      shared_ref:
+        description: Shared git ref or SHA under test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout infra
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.infra_repository }}
+          ref: ${{ inputs.infra_ref }}
+          path: scholar-infra
+      - name: Checkout core
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.core_repository }}
+          ref: ${{ inputs.core_ref }}
+          path: scholar-core
+      - name: Checkout agents
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.agents_repository }}
+          ref: ${{ inputs.agents_ref }}
+          path: scholar-agents
+      - name: Checkout shared
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ inputs.shared_repository }}
+          ref: ${{ inputs.shared_ref }}
+          path: scholar-shared
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: "1.25.x"
+      - name: Run real Postgres/pgmq pipeline with fake AI providers
+        working-directory: scholar-infra
+        run: ./e2e/run.sh
+      - name: Dump service logs on failure
+        if: failure()
+        working-directory: scholar-infra
+        run: docker compose -p scholars-e2e -f compose.local.yaml --profile e2e --profile services logs --no-color
