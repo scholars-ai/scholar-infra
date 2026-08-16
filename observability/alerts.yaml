@@ -73,3 +73,38 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Scholar Core database pool usage exceeds 80%"
+
+      # Production baseline (2026-08-16): about 0.4 MiB of Prometheus WAL on a
+      # host with 23 GiB free. Keep a conservative 4 GiB budget so a leak is
+      # detected well before the host reaches its disk watermark.
+      - alert: PrometheusStorageBudgetHigh
+        expr: |
+          prometheus_tsdb_storage_blocks_bytes
+          + prometheus_tsdb_wal_storage_size_bytes > 4 * 1024 * 1024 * 1024
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Prometheus TSDB exceeds its 4 GiB production budget"
+
+      - alert: PrometheusStorageGrowthFast
+        expr: |
+          predict_linear(prometheus_tsdb_storage_blocks_bytes[6h], 7 * 24 * 60 * 60)
+            > 4 * 1024 * 1024 * 1024
+          and
+          deriv(prometheus_tsdb_storage_blocks_bytes[6h]) > 0
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Prometheus storage growth projects above 4 GiB within 7 days"
+
+      # Tempo's local backend does not export a filesystem-size gauge. Its
+      # received-byte counter is the stable production signal available from
+      # Tempo itself, so project a seven-day ingest budget from the last hour.
+      - alert: TempoStorageGrowthFast
+        expr: |
+          sum(rate(tempo_ingester_bytes_received_total[1h]))
+            * 7 * 24 * 60 * 60 > 4 * 1024 * 1024 * 1024
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Tempo ingest growth projects above 4 GiB within 7 days"
