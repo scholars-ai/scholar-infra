@@ -89,6 +89,48 @@ wait_sql "select count(*)::text from pgmq.q_article_evaluate" 0
 wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id' and version > 3" 0
 wait_sql "select count(*)::text from (select distinct on (platform) id from articles where topic_id = '$manual_topic_id' order by platform, version desc) latest join lateral (select passed from article_evaluations where article_id = latest.id order by created_at desc limit 1) e on e.passed" 3
 wait_sql "select count(*)::text from state_transition_events where entity_type = 'article' and entity_id in (select id from articles where topic_id = '$manual_topic_id') and (from_status, to_status) in (('draft','scored'),('scored','rewrite_queued'),('scored','pending_review'))" 8
+wait_sql "select count(*)::text from (select min(created_at) filter (where entity_type = 'topic' and entity_id = '$manual_topic_id' and to_status = 'approved') as approved_at, max(created_at) filter (where entity_type = 'article' and entity_id in (select id from articles where topic_id = '$manual_topic_id') and to_status = 'pending_review') as completed_at from state_transition_events) timing where completed_at - approved_at <= interval '10 minutes'" 1
+
+# M2 人工终审 API：列表/详情/评分历史与两种终审决策都必须走 Core 状态机。
+article_list=$(curl --silent --fail --get \
+  --data-urlencode 'status=pending_review' \
+  --data-urlencode "topicId=$manual_topic_id" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles")
+test "$(python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])' <<<"$article_list")" = 3
+xhs_article_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select id from articles where topic_id = '$manual_topic_id' and platform = 'xiaohongshu' order by version desc limit 1")
+zhihu_article_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select id from articles where topic_id = '$manual_topic_id' and platform = 'zhihu' order by version desc limit 1")
+wechat_article_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
+  "select id from articles where topic_id = '$manual_topic_id' and platform = 'wechat' order by version desc limit 1")
+
+xhs_detail=$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}")
+test "$(python3 -c 'import json,sys; data=json.load(sys.stdin); print(len(data["versions"]))' <<<"$xhs_detail")" = 2
+test "$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/evaluations" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))')" = 1
+
+curl --silent --fail -X POST "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/approve" >/dev/null
+curl --silent --fail -X POST "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${zhihu_article_id}/approve" >/dev/null
+curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d '{"reason":"E2E manual rejection"}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${wechat_article_id}/reject" >/dev/null
+wait_sql "select count(*)::text from articles where id in ('$xhs_article_id','$zhihu_article_id') and status = 'approved'" 2
+wait_sql "select status::text from articles where id = '$wechat_article_id'" rejected
+
+publication_payload=$(python3 -c 'import json,sys; data=json.load(sys.stdin); article=data["article"]; print(json.dumps({"platformPostId":"https://example.test/scholars-e2e-xhs","finalTitle":article["title"]+"（人工终稿）","finalContentMd":article["contentMd"]+"\n\n人工补充：这是一处可追溯的小幅修改。","followerCountAtPublish":1234}, ensure_ascii=False))' <<<"$xhs_detail")
+publication_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "$publication_payload" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications")
+publication_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$publication_response")
+test -n "$publication_id"
+python3 -c 'import json,sys; ratio=json.load(sys.stdin)["editRatio"]; assert 0 < ratio < 1, ratio' <<<"$publication_response"
+wait_sql "select status::text from articles where id = '$xhs_article_id'" published
+wait_sql "select count(*)::text from publications where id = '$publication_id' and article_id = '$xhs_article_id' and final_content_diff like '%scholars-final-diff/v1%' and edit_ratio > 0 and edit_ratio < 1" 1
+wait_sql "select count(*)::text from state_transition_events where entity_type = 'article' and entity_id = '$xhs_article_id' and from_status = 'approved' and to_status = 'published' and metadata->>'publicationId' = '$publication_id'" 1
+
+duplicate_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d "$publication_payload" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/articles/${xhs_article_id}/publications")
+test "$duplicate_status" = 409
 
 curl --silent --fail \
   -H 'Content-Type: application/json' \
@@ -161,4 +203,4 @@ offline_response=$(curl --silent --fail \
 offline_topic_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$offline_response")
 wait_sql "select status::text from topics where id = '$offline_topic_id'" scored
 
-echo "E2E passed: M1 topic loop, three-platform M2 writing, deterministic article judging, immutable v2 rewrite, tracing, and telemetry-outage isolation"
+echo "E2E passed: M1 topic loop; M2 writing, judging, immutable rewrite, human review, publication diff/edit ratio; tracing and telemetry-outage isolation"
