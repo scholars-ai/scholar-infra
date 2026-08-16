@@ -1,0 +1,4 @@
+# Historical E2E-only Grafana dummy credentials from commit 0881c1c.
+# Current E2E uses local anonymous Grafana access and no embedded credentials.
+0881c1ca02795c819d5ea39e91c09aa59e1c1081:e2e/run.sh:curl-auth-user:91
+0881c1ca02795c819d5ea39e91c09aa59e1c1081:e2e/run.sh:curl-auth-user:96

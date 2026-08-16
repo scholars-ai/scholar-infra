@@ -88,12 +88,12 @@ trace_query="{ span.correlation.id = \"$correlation_id\" }"
 trace_id=""
 trace_detail=""
 for _ in $(seq 1 60); do
-  trace_result=$(curl --silent --fail --user admin:admin --get \
+  trace_result=$(curl --silent --fail --get \
     --data-urlencode "q=$trace_query" \
     "http://127.0.0.1:${GRAFANA_HOST_PORT}/api/datasources/proxy/uid/tempo/api/search")
   trace_ids=$(python3 -c 'import json,sys; data=json.load(sys.stdin); print(" ".join(item.get("traceID", "") for item in data.get("traces", []) if item.get("traceID")))' <<<"$trace_result")
   for trace_candidate in $trace_ids; do
-    candidate_detail=$(curl --silent --fail --user admin:admin \
+    candidate_detail=$(curl --silent --fail \
       "http://127.0.0.1:${GRAFANA_HOST_PORT}/api/datasources/proxy/uid/tempo/api/traces/$trace_candidate")
     if grep -q 'correlation.id' <<<"$candidate_detail" && grep -q 'langfuse.trace_id' <<<"$candidate_detail"; then
       trace_id="$trace_candidate"
