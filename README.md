@@ -47,7 +47,7 @@ LLM 的 prompt/output/token 明细仍在 Langfuse，Tempo Span 只保存
 - Prometheus label 只使用 queue/job type/status/provider/model/error type 等有限集合。
 - Trace 保留 7 天，Metrics 保留 30 天；初期 pipeline job 100% 采样。
 - Grafana 生产端口只绑定 `127.0.0.1:3302`，应由现有 nginx 加 TLS/认证后访问。
-- 生产 Agents 按 `source_fetch`、`topic_scout`、`topic_evaluate` 分成三个进程，避免慢队列阻塞其他队列；每个进程仍使用独立数据库连接。
+- 生产 Agents 按 `source_fetch`、`topic_scout`、`topic_evaluate`、`article_write`、`article_evaluate` 分成五个进程，避免慢队列阻塞其他队列；每个进程仍使用独立数据库连接。
 
 已预置 Dashboard：Operations Overview、Job Explorer、Queues、LLM Operations。
 已预置低流量友好的核心告警。磁盘水位告警仍由现有 `scripts/disk-guard.sh`

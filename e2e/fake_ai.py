@@ -101,6 +101,29 @@ class Handler(BaseHTTPRequestHandler):
             result = {"title": title, "contentMarkdown": content}
             if "changes" in properties:
                 result["changes"] = ["核对事实边界", "按平台档案统一结构"]
+        elif "accuracy" in schema_text:
+            dimension_properties = (
+                properties.get("dimensionScores", {}).get("properties", {})
+                if isinstance(properties.get("dimensionScores"), dict)
+                else {}
+            )
+            article_version_one = "平台：xiaohongshu" in prompt and "文章版本：1" in prompt
+            result = {
+                "dimensionScores": {
+                    key: {
+                        "score": (5 if key == "structure" else 6)
+                        if article_version_one
+                        else 8,
+                        "reason": f"deterministic article reason for {key}",
+                    }
+                    for key in dimension_properties
+                },
+                "rationale": (
+                    "Xiaohongshu v1 intentionally fails and must be rewritten."
+                    if article_version_one
+                    else "Deterministic article evaluation passed."
+                ),
+            }
         elif "timeliness" in schema_text:
             result: dict[str, Any] = {
                 "dimensionScores": {

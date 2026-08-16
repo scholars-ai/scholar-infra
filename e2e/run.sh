@@ -77,10 +77,18 @@ wait_sql "select status::text from topics where id = '$manual_topic_id'" scored
 curl --silent --fail -X POST \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${manual_topic_id}/approve" >/dev/null
 wait_sql "select status::text from topics where id = '$manual_topic_id'" written
-wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id'" 3
+wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id'" 4
 wait_sql "select count(distinct platform)::text from articles where topic_id = '$manual_topic_id'" 3
-wait_sql "select count(*)::text from schedule_runs where schedule_key like 'article_evaluate:%' and msg_id is not null" 3
-wait_sql "select count(*)::text from pgmq.q_article_evaluate" 3
+wait_sql "select count(*)::text from article_evaluations e join articles a on a.id = e.article_id where a.topic_id = '$manual_topic_id'" 4
+wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id' and status = 'pending_review'" 3
+wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id' and platform = 'xiaohongshu' and version = 1 and status = 'rewrite_queued'" 1
+wait_sql "select count(*)::text from articles newer join articles older on newer.previous_article_id = older.id where newer.topic_id = '$manual_topic_id' and newer.platform = 'xiaohongshu' and newer.version = 2 and older.version = 1" 1
+wait_sql "select count(*)::text from schedule_runs where schedule_key like 'article_evaluate:%' and msg_id is not null" 4
+wait_sql "select count(*)::text from schedule_runs where schedule_key like 'article_write:%:rewrite:2' and msg_id is not null" 1
+wait_sql "select count(*)::text from pgmq.q_article_evaluate" 0
+wait_sql "select count(*)::text from articles where topic_id = '$manual_topic_id' and version > 3" 0
+wait_sql "select count(*)::text from (select distinct on (platform) id from articles where topic_id = '$manual_topic_id' order by platform, version desc) latest join lateral (select passed from article_evaluations where article_id = latest.id order by created_at desc limit 1) e on e.passed" 3
+wait_sql "select count(*)::text from state_transition_events where entity_type = 'article' and entity_id in (select id from articles where topic_id = '$manual_topic_id') and (from_status, to_status) in (('draft','scored'),('scored','rewrite_queued'),('scored','pending_review'))" 8
 
 curl --silent --fail \
   -H 'Content-Type: application/json' \
@@ -153,4 +161,4 @@ offline_response=$(curl --silent --fail \
 offline_topic_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$offline_response")
 wait_sql "select status::text from topics where id = '$offline_topic_id'" scored
 
-echo "E2E passed: M1 topic loop, three-platform M2 writing, article evaluation dispatch, tracing, and telemetry-outage isolation"
+echo "E2E passed: M1 topic loop, three-platform M2 writing, deterministic article judging, immutable v2 rewrite, tracing, and telemetry-outage isolation"

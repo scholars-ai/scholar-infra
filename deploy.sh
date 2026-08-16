@@ -17,7 +17,13 @@ deploy_one() {
   esac
   local services=("$svc")
   if [ "$svc" = "agents" ]; then
-    services=(agents-source-fetch agents-topic-scout agents-topic-evaluate)
+    services=(
+      agents-source-fetch
+      agents-topic-scout
+      agents-topic-evaluate
+      agents-article-write
+      agents-article-evaluate
+    )
   fi
   docker compose -f compose.prod.yaml pull "${services[@]}"
   docker compose -f compose.prod.yaml up -d "${services[@]}"

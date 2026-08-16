@@ -11,3 +11,4 @@ tasks:
   writer_outline: fake/fake-outline
   writer_draft: fake/fake-draft
   writer_self_critic: fake/fake-critic
+  article_judge: fake/fake-article-judge
