@@ -21,7 +21,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(scholar_pgmq_visible_messages)",
+          "expr": "sum(max by (queue) (scholar_pgmq_visible_messages))",
           "legendFormat": "waiting"
         }
       ],
@@ -40,7 +40,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(scholar_pgmq_in_flight_messages)",
+          "expr": "sum(max by (queue) (scholar_pgmq_in_flight_messages))",
           "legendFormat": "in flight"
         }
       ],
@@ -59,7 +59,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(scholar_pgmq_current_messages)",
+          "expr": "sum(max by (queue) (scholar_pgmq_current_messages))",
           "legendFormat": "current"
         }
       ],
@@ -96,7 +96,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "scholar_pgmq_visible_messages",
+          "expr": "max by (queue) (scholar_pgmq_visible_messages)",
           "legendFormat": "{{queue}}"
         }
       ]
@@ -110,7 +110,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "scholar_pgmq_in_flight_messages",
+          "expr": "max by (queue) (scholar_pgmq_in_flight_messages)",
           "legendFormat": "{{queue}}"
         }
       ]
@@ -125,7 +125,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "scholar_pgmq_current_messages",
+          "expr": "max by (queue) (scholar_pgmq_current_messages)",
           "legendFormat": "{{queue}}"
         }
       ]
@@ -139,7 +139,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "scholar_pgmq_oldest_visible_age_seconds",
+          "expr": "max by (queue) (scholar_pgmq_oldest_visible_age_seconds)",
           "legendFormat": "{{queue}}"
         }
       ],
@@ -163,7 +163,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (queue) (scholar_pgmq_in_flight_messages)",
+          "expr": "max by (queue) (scholar_pgmq_in_flight_messages)",
           "legendFormat": "active {{queue}}"
         }
       ]

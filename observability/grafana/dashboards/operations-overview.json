@@ -24,9 +24,9 @@
       "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "refId": "A", "expr": "sum(scholar_pgmq_visible_messages)", "legendFormat": "waiting" },
-        { "refId": "B", "expr": "sum(scholar_pgmq_in_flight_messages)", "legendFormat": "active" },
-        { "refId": "C", "expr": "sum(scholar_pgmq_current_messages)", "legendFormat": "total" }
+        { "refId": "A", "expr": "sum(max by (queue) (scholar_pgmq_visible_messages))", "legendFormat": "waiting" },
+        { "refId": "B", "expr": "sum(max by (queue) (scholar_pgmq_in_flight_messages))", "legendFormat": "active" },
+        { "refId": "C", "expr": "sum(max by (queue) (scholar_pgmq_current_messages))", "legendFormat": "total" }
       ],
       "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] }
     },
@@ -69,9 +69,9 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         { "refId": "A", "expr": "sum by (error_type) (rate(scholar_core_api_errors_total[5m]))", "legendFormat": "API {{error_type}}" },
-        { "refId": "B", "expr": "scholar_core_db_pool_acquired", "legendFormat": "DB acquired" },
-        { "refId": "C", "expr": "scholar_core_db_pool_idle", "legendFormat": "DB idle" },
-        { "refId": "D", "expr": "scholar_core_db_pool_max", "legendFormat": "DB max" }
+        { "refId": "B", "expr": "max(scholar_core_db_pool_acquired)", "legendFormat": "DB acquired" },
+        { "refId": "C", "expr": "max(scholar_core_db_pool_idle)", "legendFormat": "DB idle" },
+        { "refId": "D", "expr": "max(scholar_core_db_pool_max)", "legendFormat": "DB max" }
       ]
     }
   ]
