@@ -63,3 +63,13 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Core or Agents metrics have not reached Prometheus"
+
+      - alert: CoreDBPoolNearExhaustion
+        expr: |
+          scholar_core_db_pool_acquired
+          /
+          clamp_min(scholar_core_db_pool_max, 1) > 0.80
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scholar Core database pool usage exceeds 80%"
