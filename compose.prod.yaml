@@ -51,7 +51,7 @@ services:
     restart: unless-stopped
     env_file:
       - path: ./secrets/agents.env
-        required: true # DATABASE_URL / OLLAMA_HOST / ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / LANGFUSE_*
+        required: true # DATABASE_URL / SF_API_KEY / VTRIX_API_KEY / LANGFUSE_*
     # 访问宿主机的 Ollama（embedding，ADR-005）与 RSSHub（采集）
     extra_hosts:
       - "host.docker.internal:host-gateway"
