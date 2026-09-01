@@ -226,6 +226,10 @@ wait_sql "select count(*)::text from workflow_artifacts where run_id='$workflow_
 workflow_detail=$(curl --silent --fail \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}")
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["inputSnapshotId"]; assert len(d["nodeRuns"])==6; assert all(n["outputSnapshotId"] for n in d["nodeRuns"]); assert d["decisions"]' <<<"$workflow_detail"
+config_snapshot_id=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["configSnapshotId"])' <<<"$workflow_detail")
+config_snapshot=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${config_snapshot_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); p=d["payload"]; assert p["schemaVersion"]==1; assert p["configVersion"]; assert p["resolution"]["status"]=="validated"; assert p["effective"]["topicPassThreshold"] >= 0' <<<"$config_snapshot"
 workflow_list=$(curl --silent --fail \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs?limit=10")
 python3 -c 'import json,sys; d=json.load(sys.stdin); run=next(item for item in d["items"] if item["id"]==sys.argv[1]); assert "funnel" in run["summary"]; assert set(run["summary"]["funnel"]) >= {"source_fetch","topic_scout","topic_evaluate","article_write","article_evaluate","human_review"}; assert "total" in run["summary"]; assert run["summary"]["total"]["artifactCount"] >= 1' "$workflow_run_id" <<<"$workflow_list"
@@ -256,6 +260,10 @@ write_replay=$(curl --silent --fail -X POST -H 'Content-Type: application/json' 
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/replay")
 write_replay_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$write_replay")
 wait_sql "select parent_run_id::text from workflow_runs where id='$write_replay_id'" "$workflow_run_id"
+write_replay_detail=$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${write_replay_id}")
+write_replay_config_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["configSnapshotId"])' <<<"$write_replay_detail")
+write_replay_config=$(curl --silent --fail "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${write_replay_id}/snapshots/${write_replay_config_id}")
+python3 -c 'import json,sys; p=json.load(sys.stdin)["payload"]; assert p["schemaVersion"]==1; assert p["effective"]["topicPassThreshold"] == 60.0' <<<"$write_replay_config"
 wait_sql "select status::text from workflow_runs where id='$write_replay_id'" waiting_human_review
 wait_sql "select count(*)::text from raw_items where correlation_id='$write_replay_id'" 0
 wait_sql "select count(*)::text from workflow_node_runs where run_id='$write_replay_id' and node_key in ('source_fetch','topic_scout','topic_evaluate') and status='skipped'" 3
