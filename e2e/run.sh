@@ -261,6 +261,19 @@ restored_snapshot=$(curl --silent --fail \
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["archivedAt"] is None; assert d["storageRef"]=="e2e://workflow-snapshots/source-fetch"; assert d["sha256"]==sys.argv[1]; assert d["payload"]==json.loads(sys.argv[2])["payload"]' \
   "$workflow_snapshot_sha" "$workflow_snapshot" <<<"$restored_snapshot"
 
+# retention worker 必须按配置自动归档到期快照，并保留可恢复引用；配置通过公开 API 更新。
+retention_settings=$(curl --silent --fail -X PATCH -H 'Content-Type: application/json' \
+  -d '{"workflowSnapshots":{"enabled":true,"retentionHours":1,"batchSize":10}}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/settings/schedules")
+python3 -c 'import json,sys; s=json.load(sys.stdin)["workflowSnapshots"]; assert s=={"enabled":True,"retentionHours":1,"batchSize":10}' <<<"$retention_settings"
+${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atqc \
+  "update workflow_snapshots set created_at = now() - interval '2 hours', retention_until = now() - interval '1 hour' where id='$workflow_snapshot_id' and run_id='$workflow_run_id'"
+wait_sql "select count(*)::text from workflow_snapshots where id='$workflow_snapshot_id' and archived_at is not null" 1
+retention_snapshot=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["archivedAt"]; assert d["retentionUntil"]; assert d["storageRef"]; assert d["sha256"]==sys.argv[1]' \
+  "$workflow_snapshot_sha" <<<"$retention_snapshot"
+
 # 空 selected_items 必须被拒绝，确认 replay 范围校验在 API 层生效。
 invalid_replay_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
   -H 'Content-Type: application/json' \
