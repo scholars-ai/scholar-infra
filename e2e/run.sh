@@ -278,8 +278,12 @@ wait_sql "select case when exists (select 1 from topics t join raw_items r on r.
 memory_topic_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
   "select t.id from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url='http://fake-ai:8081/article' order by t.created_at desc limit 1")
 wait_sql "select title from topics where id='$memory_topic_id'" "Memory-Aware Deterministic E2E Topic"
-curl --silent --fail -X POST \
-  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${memory_topic_id}/approve" >/dev/null
+memory_topic_status=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "select status::text from topics where id='$memory_topic_id'")
+if [ "$memory_topic_status" = "scored" ]; then
+  curl --silent --fail -X POST \
+    "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${memory_topic_id}/approve" >/dev/null
+fi
 wait_sql "select status::text from topics where id='$memory_topic_id'" written
 wait_sql "select count(*)::text from articles where topic_id='$memory_topic_id' and title like '记忆注入：%'" 1
 
