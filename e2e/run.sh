@@ -226,6 +226,9 @@ wait_sql "select count(*)::text from workflow_artifacts where run_id='$workflow_
 workflow_detail=$(curl --silent --fail \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}")
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["inputSnapshotId"]; assert len(d["nodeRuns"])==6; assert all(n["outputSnapshotId"] for n in d["nodeRuns"]); assert d["decisions"]' <<<"$workflow_detail"
+workflow_list=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs?limit=10")
+python3 -c 'import json,sys; d=json.load(sys.stdin); run=next(item for item in d["items"] if item["id"]==sys.argv[1]); assert "funnel" in run["summary"]; assert set(run["summary"]["funnel"]) >= {"source_fetch","topic_scout","topic_evaluate","article_write","article_evaluate","human_review"}; assert "total" in run["summary"]; assert run["summary"]["total"]["artifactCount"] >= 1' "$workflow_run_id" <<<"$workflow_list"
 
 # 快照 API 必须返回所属运行的不可变 payload，并携带与数据库一致的 SHA-256。
 workflow_snapshot_id=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(n["outputSnapshotId"] for n in d["nodeRuns"] if n["nodeKey"]=="source_fetch"))' <<<"$workflow_detail")
