@@ -67,6 +67,11 @@ DATABASE_URL="$DATABASE_URL" make -C ../scholar-core migrate-up
 wait_http "http://127.0.0.1:${CORE_HOST_PORT}/api/healthz"
 wait_http "http://127.0.0.1:${GRAFANA_HOST_PORT}/api/health"
 
+# 隔离 E2E 只验证显式触发的工作流；关闭测试实例的自动内容调度，避免
+# 每分钟 tick 产生额外 run 抢占同一组 pgmq 队列并造成等待抖动。
+${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atqc \
+  "update scheduler_settings set settings = jsonb_set(settings, '{contentWorkflow,enabled}', 'false'::jsonb) where id = true"
+
 manual_response=$(curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d '{"title":"Manual E2E Topic","angle":"A deterministic angle","summary":"Cross-repository test","targetPlatforms":["xiaohongshu","zhihu","wechat"]}' \
