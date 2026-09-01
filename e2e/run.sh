@@ -201,6 +201,75 @@ for insight_id in $insight_ids; do
 done
 wait_sql "select count(*)::text from insights where status='active' and manual_status_override" 2
 
+# SPEC-010 内容生产工作流：完整六阶段、动态漏斗、快照血缘与节点 replay。
+workflow_source_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "insert into sources (name,type,url,category,weight,enabled,fetch_config) values ('SPEC-010 E2E Feed','rss','http://fake-ai:8081/rss','research',1.0,true,'{\"role\":\"material\",\"fullText\":\"rss_description\",\"maxItems\":10}') returning id")
+workflow_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "{\"sourceIds\":[\"$workflow_source_id\"],\"metadata\":{\"e2e\":\"spec010\"}}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs")
+workflow_run_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$workflow_response")
+test -n "$workflow_run_id"
+wait_sql "select status::text from workflow_runs where id='$workflow_run_id'" waiting_human_review
+wait_sql "select count(*)::text from workflow_node_runs where run_id='$workflow_run_id'" 6
+wait_sql "select count(*)::text from workflow_node_runs where run_id='$workflow_run_id' and output_snapshot_id is not null" 6
+wait_sql "select count(*)::text from workflow_events where run_id='$workflow_run_id' and node_key='source_fetch' and status='succeeded'" 1
+wait_sql "select count(*)::text from workflow_events where run_id='$workflow_run_id' and node_key='topic_scout' and status='succeeded'" 1
+wait_sql "select count(*)::text from workflow_item_decisions where run_id='$workflow_run_id' and item_type='topic'" 1
+wait_sql "select count(*)::text from workflow_item_decisions where run_id='$workflow_run_id' and item_type='article'" 1
+wait_sql "select count(*)::text from workflow_artifacts where run_id='$workflow_run_id' and node_key='human_review'" 1
+
+workflow_detail=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["inputSnapshotId"]; assert len(d["nodeRuns"])==6; assert all(n["outputSnapshotId"] for n in d["nodeRuns"]); assert d["decisions"]' <<<"$workflow_detail"
+
+# 空 selected_items 必须被拒绝，确认 replay 范围校验在 API 层生效。
+invalid_replay_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"replayFromNode":"article_write","replayScope":{"mode":"selected_items","itemIds":[]}}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/replay")
+test "$invalid_replay_status" = 400
+
+# 从 article_write replay：只使用父运行的 topic 输出，不重新采集 RSS 或生成 topic。
+topic_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "select item_id from workflow_item_decisions where run_id='$workflow_run_id' and item_type='topic' and decision='accepted' limit 1")
+parent_article_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "select artifact_id from workflow_artifacts where run_id='$workflow_run_id' and node_key='human_review' limit 1")
+write_replay=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "{\"replayFromNode\":\"article_write\",\"replayScope\":{\"mode\":\"selected_items\",\"itemIds\":[\"$topic_id\"]}}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/replay")
+write_replay_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$write_replay")
+wait_sql "select parent_run_id::text from workflow_runs where id='$write_replay_id'" "$workflow_run_id"
+wait_sql "select status::text from workflow_runs where id='$write_replay_id'" waiting_human_review
+wait_sql "select count(*)::text from raw_items where correlation_id='$write_replay_id'" 0
+wait_sql "select count(*)::text from workflow_node_runs where run_id='$write_replay_id' and node_key in ('source_fetch','topic_scout','topic_evaluate') and status='skipped'" 3
+write_replay_article_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "select artifact_id from workflow_artifacts where run_id='$write_replay_id' and node_key='human_review' limit 1")
+test -n "$write_replay_article_id"
+test "$write_replay_article_id" != "$parent_article_id"
+wait_sql "select count(*)::text from articles where id='$write_replay_article_id' and topic_id='$topic_id' and version > 1" 1
+
+# article_evaluate evaluate_only：复用已有文章，仅重评估，所有下游节点必须 skipped。
+article_id="$parent_article_id"
+eval_replay=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "{\"replayFromNode\":\"article_evaluate\",\"replayScope\":{\"mode\":\"evaluate_only\",\"itemIds\":[\"$article_id\"]},\"configOverrides\":{\"articlePassThreshold\":0}}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/replay")
+eval_replay_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$eval_replay")
+wait_sql "select status::text from workflow_runs where id='$eval_replay_id'" completed
+wait_sql "select count(*)::text from workflow_node_runs where run_id='$eval_replay_id' and node_key='human_review' and status='skipped'" 1
+wait_sql "select count(*)::text from workflow_item_decisions where run_id='$eval_replay_id' and item_type='article'" 1
+
+# 相同 replay 请求必须幂等返回同一个子运行，不能重复投递业务任务。
+eval_replay_again=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "{\"replayFromNode\":\"article_evaluate\",\"replayScope\":{\"mode\":\"evaluate_only\",\"itemIds\":[\"$article_id\"]},\"configOverrides\":{\"articlePassThreshold\":0}}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/replay")
+eval_replay_again_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$eval_replay_again")
+test "$eval_replay_again_id" = "$eval_replay_id"
+
+compare_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
+  -d "{\"otherRunId\":\"$eval_replay_id\"}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/compare")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sameInput"]; assert "article_evaluate" in d["stages"]; assert "artifacts" in d and d["stages"]["article_evaluate"]["base"]["inputCount"] >= 1' <<<"$compare_response"
+
 curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d '{"url":"http://fake-ai:8081/article","note":"cross-repository e2e"}' \

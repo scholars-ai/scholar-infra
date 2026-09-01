@@ -65,6 +65,20 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if self.path == "/rss":
+            body = '''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Deterministic E2E Feed</title>
+<item><guid>e2e-feed-item-1</guid><title>可观测工作流的第一条资讯</title>
+<link>http://fake-ai:8081/article</link><description>这是一条用于验证完整内容生产工作流的长篇资讯，包含状态机、队列、评估和追踪证据。</description></item>
+<item><guid>e2e-feed-item-2</guid><title>如何调试内容生产漏斗</title>
+<link>http://fake-ai:8081/article?item=2</link><description>这是一条用于验证动态漏斗和节点回放的第二条资讯，包含足够的工程上下文。</description></item>
+</channel></rss>'''.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/rss+xml; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         self.send_error(404)
 
     def do_POST(self) -> None:
