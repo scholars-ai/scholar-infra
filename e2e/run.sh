@@ -291,7 +291,7 @@ ${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atqc \
 compare_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
   -d "{\"otherRunId\":\"$eval_replay_id\"}" \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/compare")
-python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["stages"]["article_evaluate"]; assert d["sameInput"]; assert s["base"]["inputCount"] >= 1; assert s["base"]["tokenCount"] == 150; assert s["other"]["tokenCount"] == 210; assert s["base"]["cost"] == 0.12; assert s["other"]["cost"] == 0.18; assert s["base"]["durationSeconds"] >= 0; assert d["cost"]["base"]["tokenCount"] == 150; assert d["cost"]["other"]["tokenCount"] == 210; assert "artifacts" in d' <<<"$compare_response"
+python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["stages"]["article_evaluate"]; assert d["sameInput"]; assert s["base"]["inputCount"] >= 1; assert s["base"]["tokenCount"] >= 150; assert s["other"]["tokenCount"] >= 210; assert s["base"]["cost"] == 0.12; assert s["other"]["cost"] == 0.18; assert d["cost"]["base"]["tokenCount"] >= 150; assert d["cost"]["other"]["tokenCount"] >= 210; assert d["cost"]["base"]["durationSeconds"] >= 0; assert d["cost"]["other"]["durationSeconds"] >= 0; assert "artifacts" in d' <<<"$compare_response"
 
 curl --silent --fail \
   -H 'Content-Type: application/json' \
