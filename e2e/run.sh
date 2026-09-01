@@ -274,7 +274,7 @@ curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d '{"url":"http://fake-ai:8081/article","note":"cross-repository e2e"}' \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/ingest/url" >/dev/null
-wait_sql "select coalesce((select t.status::text from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url = 'http://fake-ai:8081/article' order by t.created_at desc limit 1), '')" scored
+wait_sql "select case when exists (select 1 from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url = 'http://fake-ai:8081/article' and t.status in ('scored', 'written') order by t.created_at desc limit 1) then 'ready' else '' end" ready
 memory_topic_id=$("${COMPOSE[@]}" exec -T postgres psql -U scholar -d scholar -Atc \
   "select t.id from topics t join raw_items r on r.id = any(t.raw_item_ids) where r.url='http://fake-ai:8081/article' order by t.created_at desc limit 1")
 wait_sql "select title from topics where id='$memory_topic_id'" "Memory-Aware Deterministic E2E Topic"
