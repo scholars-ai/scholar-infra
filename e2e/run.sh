@@ -243,6 +243,24 @@ workflow_snapshot=$(curl --silent --fail \
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["runId"]==sys.argv[1]; assert d["id"]==sys.argv[2]; assert d["sha256"]==sys.argv[3]; assert d["payload"]' \
   "$workflow_run_id" "$workflow_snapshot_id" "$workflow_snapshot_sha" <<<"$workflow_snapshot"
 
+# 快照生命周期必须可逆：归档保留 payload/checksum 和存储引用，恢复只清除归档标记。
+archive_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"storageRef":"e2e://workflow-snapshots/source-fetch"}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+test "$archive_status" = 204
+archived_snapshot=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["archivedAt"]; assert d["storageRef"]=="e2e://workflow-snapshots/source-fetch"; assert d["sha256"]==sys.argv[1]; assert d["payload"]==json.loads(sys.argv[2])["payload"]' \
+  "$workflow_snapshot_sha" "$workflow_snapshot" <<<"$archived_snapshot"
+restore_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X DELETE \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+test "$restore_status" = 204
+restored_snapshot=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["archivedAt"] is None; assert d["storageRef"]=="e2e://workflow-snapshots/source-fetch"; assert d["sha256"]==sys.argv[1]; assert d["payload"]==json.loads(sys.argv[2])["payload"]' \
+  "$workflow_snapshot_sha" "$workflow_snapshot" <<<"$restored_snapshot"
+
 # 空 selected_items 必须被拒绝，确认 replay 范围校验在 API 层生效。
 invalid_replay_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
   -H 'Content-Type: application/json' \
