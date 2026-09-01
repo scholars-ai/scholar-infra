@@ -415,6 +415,12 @@ fi
 
 # 可观测性故障不得影响业务：停止 Collector 后再跑一条完整评分链。
 "${COMPOSE[@]}" stop otel-collector
+sleep 12
+offline_workflow_response=$(curl --silent --fail \
+  -H 'Content-Type: application/json' \
+  -d "{\"sourceIds\":[\"$workflow_source_id\"],\"metadata\":{\"e2e\":\"collector-offline\"}}" \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs")
+python3 -c 'import json,sys; d=json.load(sys.stdin); o=d["metadata"]["observability"]; assert o["status"]=="unavailable"; assert o["missing"] is True' <<<"$offline_workflow_response"
 offline_response=$(curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d '{"title":"Collector Offline Topic","angle":"Business continues","summary":"Telemetry is optional","targetPlatforms":["zhihu"]}' \
