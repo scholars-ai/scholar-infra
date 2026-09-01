@@ -416,6 +416,21 @@ fi
 # 可观测性故障不得影响业务：停止 Collector 后再跑一条完整评分链。
 "${COMPOSE[@]}" stop otel-collector
 sleep 12
+otel_alert_found=""
+for _ in $(seq 1 75); do
+  alert_result=$(curl --silent --fail --get \
+    --data-urlencode 'query=ALERTS{alertname="OTelCollectorUnavailable",alertstate="firing"}' \
+    "http://127.0.0.1:${PROMETHEUS_HOST_PORT}/api/v1/query")
+  otel_alert_found=$(python3 -c 'import json,sys; data=json.load(sys.stdin); print("yes" if data.get("data", {}).get("result") else "")' <<<"$alert_result")
+  if [ -n "$otel_alert_found" ]; then
+    break
+  fi
+  sleep 2
+done
+if [ -z "$otel_alert_found" ]; then
+  echo "timed out waiting for OTelCollectorUnavailable alert" >&2
+  exit 1
+fi
 offline_workflow_response=$(curl --silent --fail \
   -H 'Content-Type: application/json' \
   -d "{\"sourceIds\":[\"$workflow_source_id\"],\"metadata\":{\"e2e\":\"collector-offline\"}}" \

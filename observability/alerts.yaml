@@ -57,6 +57,20 @@ groups:
         annotations:
           summary: "OpenTelemetry Collector cannot export spans"
 
+      - alert: OTelCollectorUnavailable
+        expr: up{job="otel-collector"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "OpenTelemetry Collector scrape target is unavailable"
+
+      - alert: OTelMetricsPipelineUnavailable
+        expr: up{job="scholars-otel-metrics"} == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scholars OTel metrics pipeline is unavailable"
+
       - alert: ScholarsMetricsMissing
         expr: absent(scholar_core_scheduler_ticks_total) or absent(scholar_agent_jobs_started_total)
         for: 15m
