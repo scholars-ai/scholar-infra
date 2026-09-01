@@ -47,6 +47,7 @@ E2E 仅用于快速开发反馈，不作为最终通过条件。运行入口为�
 
 ```bash
 cd /root/scholars-ai/scholar-infra
+git pull --ff-only --prune
 ./e2e/run.sh
 ```
 
