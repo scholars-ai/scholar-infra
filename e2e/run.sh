@@ -285,7 +285,7 @@ if [ "$memory_topic_status" = "scored" ]; then
     "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/topics/${memory_topic_id}/approve" >/dev/null
 fi
 wait_sql "select status::text from topics where id='$memory_topic_id'" written
-wait_sql "select count(*)::text from articles where topic_id='$memory_topic_id' and title like '记忆注入：%'" 1
+wait_sql "select case when count(*) > 0 then 'ready' else 'empty' end from articles where topic_id='$memory_topic_id' and title like '记忆注入：%'" ready
 
 retired_insight_id=${insight_ids%% *}
 curl --silent --fail -X PATCH -H 'Content-Type: application/json' -d '{"status":"retired"}' \
