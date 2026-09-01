@@ -202,7 +202,7 @@ done
 wait_sql "select count(*)::text from insights where status='active' and manual_status_override" 2
 
 # SPEC-010 内容生产工作流：完整六阶段、动态漏斗、快照血缘与节点 replay。
-workflow_source_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+workflow_source_id=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atqc \
   "insert into sources (name,type,url,category,weight,enabled,fetch_config) values ('SPEC-010 E2E Feed','rss','http://fake-ai:8081/rss','research',1.0,true,'{\"role\":\"material\",\"fullText\":\"rss_description\",\"maxItems\":10}') returning id")
 workflow_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
   -d "{\"sourceIds\":[\"$workflow_source_id\"],\"metadata\":{\"e2e\":\"spec010\"}}" \
