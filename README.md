@@ -40,6 +40,29 @@ export OTEL_EXPORTER_OTLP_INSECURE=true
 LLM 的 prompt/output/token 明细仍在 Langfuse，Tempo Span 只保存
 `langfuse.trace_id` 等低敏感属性，并由 Job Explorer Dashboard 跳转。
 
+## E2E 验收基线（VPS）
+
+提交并推送代码后，统一在 VPS 上执行隔离的 E2E，作为合并和发布前的验收基线；本机
+E2E 仅用于快速开发反馈，不作为最终通过条件。运行入口为：
+
+```bash
+cd /root/scholars-ai/scholar-infra
+./e2e/run.sh
+```
+
+E2E 使用独立的 Compose project（默认 `scholars-e2e`）、PostgreSQL、Fake AI 和
+Core/Agents 服务，所有端口和 named volume 均与生产环境隔离，禁止连接生产数据库或
+复用生产卷。脚本结束后默认清理 E2E 容器和卷；需要保留现场排查时才设置
+`KEEP_E2E=1`，排查完成后手动执行：
+
+```bash
+docker compose -p scholars-e2e -f compose.local.yaml --profile e2e --profile services down -v --remove-orphans
+```
+
+验收应覆盖完整 workflow、节点输入输出快照、decision/replay 与幂等性，以及可观测性
+停机隔离；脚本退出码为 `0` 才视为通过。E2E 完成后确认生产 Core/Postgres 容器未被
+重启，且生产数据卷未发生变化。
+
 ## 可观测性运行原则
 
 - Collector/Tempo/Prometheus 不可用不影响业务 job；SDK 使用异步批量导出。
