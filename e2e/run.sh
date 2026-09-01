@@ -222,6 +222,15 @@ workflow_detail=$(curl --silent --fail \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}")
 python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["inputSnapshotId"]; assert len(d["nodeRuns"])==6; assert all(n["outputSnapshotId"] for n in d["nodeRuns"]); assert d["decisions"]' <<<"$workflow_detail"
 
+# 快照 API 必须返回所属运行的不可变 payload，并携带与数据库一致的 SHA-256。
+workflow_snapshot_id=$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(n["outputSnapshotId"] for n in d["nodeRuns"] if n["nodeKey"]=="source_fetch"))' <<<"$workflow_detail")
+workflow_snapshot_sha=$(${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atc \
+  "select sha256 from workflow_snapshots where id='$workflow_snapshot_id' and run_id='$workflow_run_id'")
+workflow_snapshot=$(curl --silent --fail \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/snapshots/${workflow_snapshot_id}")
+python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["runId"]==sys.argv[1]; assert d["id"]==sys.argv[2]; assert d["sha256"]==sys.argv[3]; assert d["payload"]' \
+  "$workflow_run_id" "$workflow_snapshot_id" "$workflow_snapshot_sha" <<<"$workflow_snapshot"
+
 # 空 selected_items 必须被拒绝，确认 replay 范围校验在 API 层生效。
 invalid_replay_status=$(curl --silent --output /dev/null --write-out '%{http_code}' -X POST \
   -H 'Content-Type: application/json' \
@@ -258,6 +267,11 @@ wait_sql "select status::text from workflow_runs where id='$eval_replay_id'" com
 wait_sql "select count(*)::text from workflow_node_runs where run_id='$eval_replay_id' and node_key='human_review' and status='skipped'" 1
 wait_sql "select count(*)::text from workflow_item_decisions where run_id='$eval_replay_id' and item_type='article'" 1
 
+# 快照必须按 run_id 隔离，父运行的 snapshot 不能通过 replay 运行读取。
+cross_run_snapshot_status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+  "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${eval_replay_id}/snapshots/${workflow_snapshot_id}")
+test "$cross_run_snapshot_status" = 404
+
 # 相同 replay 请求必须幂等返回同一个子运行，不能重复投递业务任务。
 eval_replay_again=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
   -d "{\"replayFromNode\":\"article_evaluate\",\"replayScope\":{\"mode\":\"evaluate_only\",\"itemIds\":[\"$article_id\"]},\"configOverrides\":{\"articlePassThreshold\":0}}" \
@@ -265,10 +279,14 @@ eval_replay_again=$(curl --silent --fail -X POST -H 'Content-Type: application/j
 eval_replay_again_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<<"$eval_replay_again")
 test "$eval_replay_again_id" = "$eval_replay_id"
 
+# 写入可控的 usage 样本，确保 compare 暴露阶段和运行级 token/cost 指标。
+${COMPOSE[@]} exec -T postgres psql -U scholar -d scholar -Atqc \
+  "insert into agent_runs (job_type, status, correlation_id, tokens_in, tokens_out, cost_usd) values ('article.evaluate','succeeded','$workflow_run_id',100,50,0.12),('article.evaluate','succeeded','$eval_replay_id',140,70,0.18)"
+
 compare_response=$(curl --silent --fail -X POST -H 'Content-Type: application/json' \
   -d "{\"otherRunId\":\"$eval_replay_id\"}" \
   "http://127.0.0.1:${CORE_HOST_PORT}/api/v1/workflow/runs/${workflow_run_id}/compare")
-python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["sameInput"]; assert "article_evaluate" in d["stages"]; assert "artifacts" in d and d["stages"]["article_evaluate"]["base"]["inputCount"] >= 1' <<<"$compare_response"
+python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["stages"]["article_evaluate"]; assert d["sameInput"]; assert s["base"]["inputCount"] >= 1; assert s["base"]["tokenCount"] == 150; assert s["other"]["tokenCount"] == 210; assert s["base"]["cost"] == 0.12; assert s["other"]["cost"] == 0.18; assert s["base"]["durationSeconds"] >= 0; assert d["cost"]["base"]["tokenCount"] == 150; assert d["cost"]["other"]["tokenCount"] == 210; assert "artifacts" in d' <<<"$compare_response"
 
 curl --silent --fail \
   -H 'Content-Type: application/json' \
