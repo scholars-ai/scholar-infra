@@ -69,6 +69,10 @@ services:
     <<: *agents
     environment:
       WORKER_QUEUES: topic_scout
+      # TopicScout evaluates one embedding cluster per LLM request. A normal
+      # 12-hour source batch can contain dozens of clusters, so its deadline
+      # must exceed the default used by the shorter per-item workers.
+      JOB_TIMEOUT_SECONDS: "900"
 
   agents-topic-evaluate:
     <<: *agents
