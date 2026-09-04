@@ -73,6 +73,10 @@ services:
       # 12-hour source batch can contain dozens of clusters, so its deadline
       # must exceed the default used by the shorter per-item workers.
       JOB_TIMEOUT_SECONDS: "900"
+      # VTRIX may close bursts of long-running requests before sending headers.
+      # Keep cluster parallelism bounded; per-request transport retries handle
+      # isolated disconnects without replaying the entire topic_scout job.
+      SCOUT_MAX_CONCURRENCY: "2"
 
   agents-topic-evaluate:
     <<: *agents
